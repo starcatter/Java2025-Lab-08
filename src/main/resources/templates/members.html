@@ -1,0 +1,11 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org"
+      th:replace="layout :: layout(title='Members list', content=~{::content})">
+
+<div th:fragment="content">
+    <h1>Members List</h1>
+    <ul class="list-group">
+        <li class="list-group-item" th:each="user : ${users}" th:text="${user}">User</li>
+    </ul>
+</div>
+</html>

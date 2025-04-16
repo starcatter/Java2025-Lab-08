@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org"
+      th:replace="layout :: layout(title='Login form', content=~{::content})">
+<div th:fragment="content">
+    <h2>Login</h2>
+    <form method="post" action="/login">
+        <div class="mb-3">
+            <input type="text" name="username" placeholder="Username" class="form-control" required>
+        </div>
+        <div class="mb-3">
+            <input type="password" name="password" placeholder="Password" class="form-control" required>
+        </div>
+        <button type="submit" class="btn btn-primary">Login</button>
+        <div th:if="${error}" class="text-danger">Invalid username or password!</div>
+    </form>
+</div>

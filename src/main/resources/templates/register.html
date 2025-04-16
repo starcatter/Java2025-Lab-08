@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org"
+      th:replace="layout :: layout(title='Registration form', content=~{::content})">
+<div th:fragment="content">
+    <h2>Register</h2>
+    <form method="post" action="/register">
+        <div class="mb-3">
+            <input type="text" name="username" placeholder="Username" class="form-control" required>
+        </div>
+        <div class="mb-3">
+            <input type="password" name="password" placeholder="Password" class="form-control" required>
+        </div>
+        <button type="submit" class="btn btn-primary">Register</button>
+        <div th:if="${error}" class="text-danger">Username already taken!</div>
+    </form>
+</div>
