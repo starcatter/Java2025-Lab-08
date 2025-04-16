@@ -142,4 +142,7 @@ public class JavalinApp {
         app.start(port);
     }
 
+    public Javalin getServer() {
+        return app;
+    }
 }
