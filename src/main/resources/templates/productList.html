@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org"
+      th:replace="layout :: layout(title='Products', content=~{::content})">
+<div th:fragment="content">
+    <h1>Products</h1>
+    <ul>
+        <li th:each="product : ${products}">
+            <h2 th:text="${product.name}">Product Name</h2>
+            <p th:text="'$' + ${product.price}"></p>
+            <p th:text="${product.description}">Description</p>
+
+            <!-- Add to cart button conditionally -->
+            <div th:if="${session.user}">
+                <form action="/cart/add" method="post">
+                    <input type="hidden" name="productId" th:value="${product.id}">
+                    <button type="submit">Add to Cart</button>
+                </form>
+            </div>
+        </li>
+    </ul>
+</div>
+</html>

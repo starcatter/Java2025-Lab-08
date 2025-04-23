@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org"
+      th:replace="layout :: layout(title='Shopping cart', content=~{::content})">
+
+<div class="container mt-5" th:fragment="content">
+    <h1>Shopping Cart</h1>
+
+    <table class="table table-bordered">
+        <thead>
+        <tr>
+            <th>Product Name</th>
+            <th>Price</th>
+            <th>Quantity</th>
+            <th>Total</th>
+            <th>Action</th>
+        </tr>
+        </thead>
+        <tbody>
+        <!-- Iterate over cart items -->
+        <tr th:each="item : ${cart.items}">
+            <td th:text="${item.key.name}"></td>
+            <td>$<span th:text="${item.key.price}"></span></td>
+            <td><span th:text="${item.value}"></span></td>
+            <td>$<span th:text="${item.key.price * item.value}"></span></td>
+            <td>
+                <!-- Remove button form -->
+                <form action="/cart/remove" method="post">
+                    <input type="hidden" name="productId" th:value="${item.key.id}">
+                    <button class="btn btn-danger btn-sm">Remove</button>
+                </form>
+            </td>
+        </tr>
+        </tbody>
+    </table>
+
+    <!-- Total amount -->
+    <div class="alert alert-info">
+        Total: $<span th:text="${total}"></span>
+    </div>
+
+    <!-- Place Order button -->
+    <a href="/checkout" class="btn btn-primary float-end">Place Order</a>
+</div>

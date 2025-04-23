@@ -1,0 +1,26 @@
+<!-- src/main/resources/templates/orders.html -->
+<html xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout :: layout(title='Your orders', content=~{::content})}">
+<div th:fragment="content">
+    <h1>Orders</h1>
+
+    <!-- Order List Table -->
+    <table class="table">
+        <thead>
+        <tr>
+            <th>ID</th>
+            <th>Date</th>
+            <th></th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr th:each="order : ${orders}">
+            <td><a th:href="@{/orders/{id}(id=${order.id})}"
+                   th:text="${order.id}">123</a></td>
+            <td><a th:href="@{/orders/{id}(id=${order.id})}"
+                   class="btn btn-sm btn-primary">View Details</a></td>
+        </tr>
+        </tbody>
+    </table>
+</div>
+</html>

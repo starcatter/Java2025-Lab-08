@@ -1,0 +1,31 @@
+<!-- src/main/resources/templates/order-details.html -->
+<html xmlns:th="http://www.thymeleaf.org"
+      th:replace="~{layout :: layout(title='Order detaild', content=~{::content})}">
+<div th:fragment="content">
+    <h1>Order #[[${order.id}]]</h1>
+
+    <!-- Header Information -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <p><strong>Delivery Address:</strong> <span th:text="${order.deliveryAddress}"></span></p>
+        </div>
+    </div>
+
+    <!-- Product List Table -->
+    <table class="table">
+        <thead>
+        <tr>
+            <th>Product ID</th>
+            <th>Name</th>
+            <th>Quantity</th>
+            <th>Price</th>
+        </tr>
+        </thead>
+        <tbody>
+
+        <!-- TODO: product list-->
+
+        </tbody>
+    </table>
+</div>
+</html>

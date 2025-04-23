@@ -42,7 +42,17 @@ public class JavalinApp {
             config.fileRenderer(new JavalinThymeleaf(thymeleaf));
         });
 
-        // Define routes [[4]]
+        Database db = new Database();
+        ProductService productService = new ProductService(db);
+        // Pre-populate sample products
+        productService.addProduct(new Product(1,"Wireless Headphones", 99.99, "Noise-canceling Bluetooth headphones"));
+        productService.addProduct(new Product(2,"Smartwatch", 149.99, "Fitness tracker with heart rate monitoring"));
+
+
+        ShoppingCartService shoppingCartService = new ShoppingCartService(db, productService);
+        OrderService orderService = new OrderService(db, shoppingCartService);
+
+        // Define routes
         app.get("/", ctx -> ctx.render("home.html"));
         app.get("/about", ctx -> ctx.render("about.html"));
         app.get("/contact", ctx -> ctx.render("contact.html"));
@@ -115,6 +125,124 @@ public class JavalinApp {
             // Render members page with user list [[3]]
             ctx.render("members.html", Map.of("users", usernames));
         });
+
+        // products
+        var productController = new ProductController(productService);
+
+        app.get("/products", productController::productList);
+        app.get("/products/{id}", productController::productDetails);
+
+//        app.get("/products", ctx -> {
+//            List<Product> products = productService.getAllProducts();
+//            ctx.render("productList.html", Map.of("products", products));
+//        });
+//
+//        app.get("/products/{id}", ctx -> {
+//            Integer id = Integer.valueOf(ctx.pathParam("id"));
+//            Product product = productService.getProductById(id);
+//            ctx.render("product.html", Map.of("product", product));
+//        });
+
+        // shopping cart
+
+        app.get("/cart", ctx -> {
+            String userId = ctx.sessionAttribute("user");
+            ShoppingCart cart = shoppingCartService.getCart(userId);
+            ctx.render("cart.html", Map.of("cart", cart));
+        });
+
+        app.post("/cart/add", ctx -> {
+            String userId = ctx.sessionAttribute("user");
+            if (userId == null) {
+                ctx.status(403).result("Login required to add items to cart");
+                return;
+            }
+
+            int productId = Integer.parseInt(ctx.formParam("productId"));
+
+            shoppingCartService.addItem(userId, productId);
+            ctx.redirect("/cart"); // Redirect after POST
+        });
+
+        app.post("/cart/remove", ctx -> {
+            String userId = ctx.sessionAttribute("user");
+            if (userId == null) {
+                ctx.status(403).result("Login required to modify cart");
+                return;
+            }
+
+            int productId = Integer.parseInt(ctx.formParam("productId"));
+            Product product = productService.getProductById(productId);
+
+            if(product != null) {
+                shoppingCartService.removeItem(userId, product);
+            }
+
+            ctx.redirect("/cart"); // Redirect back to cart page
+        });
+
+        // ----
+
+        // Checkout form (GET)
+        app.get("/checkout", ctx -> {
+            String userId = ctx.sessionAttribute("user");
+            if (userId == null) ctx.redirect("/login");
+
+            ShoppingCart cart = shoppingCartService.getCart(userId);
+            ctx.render("checkout.html", Map.of("cart", cart));
+        });
+
+        // Place order (POST)
+        app.post("/checkout", ctx -> {
+            String userId = ctx.sessionAttribute("user");
+            if (userId == null) ctx.redirect("/login");
+
+            String deliveryAddress = ctx.formParam("deliveryAddress");
+
+            int orderId = orderService.placeOrder(userId, deliveryAddress);
+            ctx.redirect("/orders/"+orderId);
+        });
+
+        // Order list
+        app.get("/orders", ctx -> {
+            String userId = ctx.sessionAttribute("user");
+            if (userId == null) ctx.redirect("/login");
+
+            List<Order> orders = orderService.getUserOrders(userId);
+            ctx.render("orders.html", Map.of("orders", orders));
+        });
+
+        app.get("/orders/{id}", ctx -> {
+            String userId = ctx.sessionAttribute("user");
+            if (userId == null) ctx.redirect("/login");
+
+            int orderId = Integer.valueOf(ctx.pathParam("id"));
+            var orderOpt = orderService.getUserOrders(userId).stream().filter(o->o.getId()==orderId).findFirst();
+
+            Order order = orderOpt.get(); // Add getOrder() method to Database
+            ctx.render("order-details.html", Map.of(
+                    "order", order,
+                    "productService", productService
+            ));
+        });
+
+        // ----
+
+        app.get("/admin/addProduct", ctx -> {
+            // Ensure user is admin [[7]]
+            ctx.render("admin-add-product.html");
+        });
+        app.post("/admin/addProduct", ctx -> {
+            // get these from form
+            int id = 0;
+            String name = "";
+            double price = 0;
+            String description = "";
+
+            Product product = new Product(id, name, price, description);
+            productService.addProduct(product);
+            ctx.redirect("/products");
+        });
     }
 
     // Get Thymeleaf instance
@@ -132,8 +260,8 @@ public class JavalinApp {
         return templateEngine;
     }
 
-    public User setupAdminAccount(String userName, String password){
-        var admin = new User(userName,password, UserType.Admin);
+    public User setupAdminAccount(String userName, String password) {
+        var admin = new User(userName, password, UserType.Admin);
         users.add(admin);
         return admin;
     }
