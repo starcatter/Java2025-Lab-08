@@ -34,11 +34,6 @@ Projekt startowy to prosta aplikacja Javalin z rejestracją, logowaniem i listą
 
 ## Omówienie projektu startowego (8:15–8:30)
 
-> **Uwaga dla prowadzącego:**  
-> Ta część to szybki przegląd projektu — prowadzący omawia kod na ekranie, studenci czytają i zadają pytania. Cel: wszyscy
-> rozumieją, co aplikacja robi, zanim zaczną ją modyfikować. Przewidywany czas: 5–8 minut omówienia,
-> reszta na pytania i sklonowanie repozytorium.
-
 ### Co robi aplikacja startowa?
 
 Aplikacja to prosta witryna z systemem kont użytkowników:
