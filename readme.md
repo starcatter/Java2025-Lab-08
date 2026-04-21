@@ -11,7 +11,7 @@
 Projekt startowy to prosta aplikacja Javalin z rejestracją, logowaniem i listą użytkowników dostępną po zalogowaniu. Wszystkie handlery są zdefiniowane w jednej klasie `JavalinApp`. Na zajęciach kolejno wyodrębniamy kontrolery, dodajemy obsługę błędów i analizujemy działanie gotowych testów Selenium weryfikujących aplikację w przeglądarce.
 
 **Struktura zajęć:**
-- **8:00–8:15** — Wejściówka (15 pytań): powtórka z Lab 7 — HTTP, Javalin, Thymeleaf
+- **8:00–8:15** — Wejściówka (3 pytania): powtórka z Lab 7 — HTTP, Javalin, Thymeleaf
 - **8:15–8:30** — Omówienie projektu startowego, uruchomienie aplikacji i testów
 - **8:30–9:00** — Część 1 (30 min): wyodrębnienie kontrolerów, obsługa błędów, zdarzenia cyklu życia
 - **9:00–9:30** — Część 2 (30 min): testy end-to-end z Selenium
