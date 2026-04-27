@@ -1,15 +1,35 @@
 <!DOCTYPE html>
-<html xmlns:th="http://www.thymeleaf.org">
-<head><title>Checkout</title><link rel="stylesheet" th:href="@{/style/style.css}"></head>
+<html xmlns:th="http://www.thymeleaf.org"
+      th:replace="layout :: layout(title='Checkout', content=~{::content})">
 <body>
-<header><h1>Webstore</h1></header>
-<main>
+<div th:fragment="content">
     <h2>Checkout</h2>
-    <p>Review your order and confirm purchase.</p>
+    <p>Review your order below and confirm to complete the purchase.</p>
+
+    <table class="table">
+        <thead>
+        <tr><th>Product</th><th>Unit price</th><th>Qty</th><th>Line total</th></tr>
+        </thead>
+        <tbody>
+        <tr th:each="entry : ${cartItems}">
+            <td th:text="${entry.key.name}">Product</td>
+            <td th:text="'$' + ${entry.key.price}">$0.00</td>
+            <td th:text="${entry.value}">1</td>
+            <td th:text="'$' + ${entry.key.price * entry.value}">$0.00</td>
+        </tr>
+        </tbody>
+        <tfoot>
+        <tr>
+            <th colspan="3" style="text-align:right;">Total to pay:</th>
+            <th th:text="'$' + ${total}">$0.00</th>
+        </tr>
+        </tfoot>
+    </table>
+
     <form action="/checkout/process" method="post">
-        <button type="submit">Confirm & Pay</button>
+        <button type="submit" class="btn btn-success">Confirm &amp; Pay</button>
+        <a th:href="@{/cart}" class="btn btn-secondary">← Back to Cart</a>
     </form>
-    <p><a href="/cart">← Back to Cart</a></p>
-</main>
+</div>
 </body>
 </html>

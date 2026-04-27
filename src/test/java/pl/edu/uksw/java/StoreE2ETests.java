@@ -97,7 +97,7 @@ class StoreE2ETests extends SeleniumTestBase {
     }
 
     public static class CartPage {
-        @FindBy(css = "main li strong") private List<WebElement> itemNames;
+        @FindBy(css = "main strong") private List<WebElement> itemNames;
         @FindBy(css = "a[href='/checkout']") private WebElement checkoutLink;
 
         public CartPage(WebDriver driver) { PageFactory.initElements(driver, this); }

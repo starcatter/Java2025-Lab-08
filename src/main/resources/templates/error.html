@@ -1,28 +1,13 @@
 <!DOCTYPE html>
-<html xmlns:th="http://www.thymeleaf.org">
-<head>
-    <meta charset="UTF-8">
-    <title th:text="'Błąd ' + ${code}">Błąd</title>
-    <link rel="stylesheet" th:href="@{/style/style.css}">
-</head>
+<html xmlns:th="http://www.thymeleaf.org"
+      th:replace="layout :: layout(title='Error', content=~{::content})">
 <body>
-<header>
-    <h1>Javalin App</h1>
-    <nav>
-        <a href="/">Strona główna</a>
-        <a href="/about">O aplikacji</a>
-        <a href="/contact">Kontakt</a>
-    </nav>
-</header>
-<main>
+<div th:fragment="content">
     <section class="error-container">
-        <h1 th:text="'Błąd ' + ${code}">Błąd</h1>
-        <p th:text="${message}">Coś poszło nie tak.</p>
-        <a href="/" class="btn">Powrót na stronę główną</a>
+        <h1 th:text="'Error ' + ${code}">Error</h1>
+        <p th:text="${message}">Something went wrong.</p>
+        <a th:href="@{/}" class="btn btn-primary">Back to home page</a>
     </section>
-</main>
-<footer>
-    <p>&copy; 2026 Javalin App. Wszystkie prawa zastrzeżone.</p>
-</footer>
+</div>
 </body>
 </html>

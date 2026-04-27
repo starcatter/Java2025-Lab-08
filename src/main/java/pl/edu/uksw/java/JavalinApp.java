@@ -25,7 +25,7 @@ public class JavalinApp {
         var members = new MemberController(users);
         var products = new ProductController(productRepo, cartService);
         var cart = new CartController(cartService, productRepo);
-        var checkout = new CheckoutController(cartService, orderService);
+        var checkout = new CheckoutController(cartService, orderService, productRepo);
         var orders = new OrderController(orderService, productRepo);
 
         this.app = Javalin.create(config -> {

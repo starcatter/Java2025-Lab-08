@@ -1,1525 +1,621 @@
-# Laboratorium 8: Aplikacja webowa w Javalin — refaktoryzacja, obsługa błędów i testy Selenium
+# Laboratorium 9: Wstrzykiwanie zależności (DI) w Javie z Google Guice
 
 ## Informacje organizacyjne
 
 **Data:** 28.04.2026, 8:00–9:30  
-**Temat:** Rozbudowa aplikacji webowej w Javalin: podział na kontrolery, obsługa błędów przez wyjątki, zdarzenia cyklu życia serwera, testy end-to-end z Selenium.
+**Temat:** Wstrzykiwanie zależności (Dependency Injection, DI), kontener IoC, podstawy Google Guice — moduły, bindingi, wstrzykiwanie przez konstruktor, cykl życia obiektów.
 
 **Repozytorium:**  
-> https://github.com/starcatter/Java2025-Lab-08
+> **https://github.com/starcatter/Java2025-Lab-08**
 
-Projekt startowy to prosta aplikacja Javalin z rejestracją, logowaniem i listą użytkowników dostępną po zalogowaniu. Wszystkie handlery są zdefiniowane w jednej klasie `JavalinApp`. Na zajęciach kolejno wyodrębniamy kontrolery, dodajemy obsługę błędów i analizujemy działanie gotowych testów Selenium weryfikujących aplikację w przeglądarce.
+Projekt startowy to rozszerzona wersja aplikacji z Lab 8 — sklep internetowy z rejestracją, logowaniem, katalogiem produktów, koszykiem, składaniem zamówień i historią zamówień.
 
-**Struktura zajęć:**
-- **8:00–8:15** — Wejściówka (3 pytania): powtórka z Lab 7 — HTTP, Javalin, Thymeleaf
-- **8:15–8:30** — Omówienie projektu startowego, uruchomienie aplikacji i testów
-- **8:30–9:00** — Część 1 (30 min): wyodrębnienie kontrolerów, obsługa błędów, zdarzenia cyklu życia
-- **9:00–9:30** — Część 2 (30 min): testy end-to-end z Selenium
+Na zajęciach wprowadzamy Google Guice i krok po kroku przenosimy ręczne tworzenie obiektów (`new`) z klasy `JavalinApp` do kontenera DI.
 
-**Uwagi techniczne:**
-- Wymagana przeglądarka Firefox lub Chrome z odpowiednim sterownikiem (WebDriverManager pobiera automatycznie).
-- JDK 17+, Maven — po sklonowaniu wykonaj `mvn clean package`.
-- Aby uruchomić testy, użyj panelu Maven w IntelliJ IDEA (`Maven → Lifecycle → test`) lub komendy terminala: `mvn test`.
-- Port domyślny: **8089**. Przed uruchomieniem kolejnego wariantu zatrzymaj poprzedni.
-- Projekt zawiera gotowe szablony Thymeleaf i plik CSS — skupiamy się na kodzie Javy i testach.
+## Struktura zajęć
+
+- **8:00–8:15** — Wejściówka (3 pytania): powtórka z Lab 8
+- **8:15–8:40** — Wprowadzenie: DI, IoC, warstwy aplikacji, krótkie ćwiczenie z Guice
+- **8:40–9:05** — Część 1: dodanie Guice, konfiguracja Mavena, `UserRepository`, `AppModule`, `Main`
+- **9:05–9:20** — Część 2: repozytoria i serwisy jako zależności zarządzane przez Guice
+- **9:20–9:30** — Część 3: kontrolery — przykład, omówienie, zadanie domowe
+
+## Uwagi techniczne
+
+- **JDK 17+**, Maven — po sklonowaniu repozytorium wykonaj `mvn clean package`.
+- Guice dodajemy jako zależność Mavena w części praktycznej.
+- Po każdym etapie refaktoryzacji uruchamiaj `mvn test`, aby upewnić się, że aplikacja nadal działa poprawnie.
+- Szablony HTML i pliki CSS **nie wymagają zmian** — pracujemy wyłącznie nad architekturą kodu Javy.
+
+**Materiały referencyjne:**
+- [Google Guice — GitHub](https://github.com/google/guice)
+- [Guice — Getting Started](https://github.com/google/guice/wiki/GettingStarted)
+- [Guice — Bindings](https://github.com/google/guice/wiki/Bindings)
+- [Guice — Injections](https://github.com/google/guice/wiki/Injections)
+- [Guice — Scopes](https://github.com/google/guice/wiki/Scopes)
+- [JSR 330: `javax.inject`](https://javax-inject.github.io/javax-inject/)
 
 ---
 
 ## Wejściówka (8:00–8:15)
 
 > **Czas:** 15 minut  
-> **Format:** 3 pytania jednokrotnego wyboru.
 
 ---
 
-## Omówienie projektu startowego (8:15–8:30)
+## Wprowadzenie teoretyczne (8:15–8:40): Dependency Injection — po co i gdzie w projekcie
 
-### Co robi aplikacja startowa?
+### 1. Problem: ręczne składanie grafu obiektów
 
-Aplikacja to prosta witryna z systemem kont użytkowników:
+W projekcie startowym klasa `JavalinApp` tworzy większość obiektów aplikacji ręcznie:
 
-| Ścieżka | Metoda | Opis |
+```java
+var productRepo  = new ProductRepository();
+var cartService  = new CartService(users);
+var orderService = new OrderService(users);
+
+var pages    = new PageController();
+var auth     = new AuthController(users);
+var members  = new MemberController(users);
+var products = new ProductController(productRepo, cartService);
+var cart     = new CartController(cartService, productRepo);
+var checkout = new CheckoutController(cartService, orderService, productRepo);
+var orders   = new OrderController(orderService, productRepo);
+```
+
+Ten fragment kodu nie zawiera logiki biznesowej, ale odpowiada za utworzenie i połączenie wielu obiektów. Im większa aplikacja, tym bardziej rozrasta się taki blok inicjalizacji. Dodanie nowej zależności, np. `EmailService`, wymaga zmian w kilku miejscach: w konstruktorze klasy, która tej zależności potrzebuje, w `JavalinApp`, często również w testach.
+
+To jest problem, który rozwiązuje **Dependency Injection** wspierane przez kontener.
+
+### 2. Warstwy aplikacji: repozytoria, serwisy, kontrolery
+
+W projekcie sklepu występują trzy główne rodzaje klas:
+
+| Warstwa | Przykłady | Odpowiedzialność |
 |---|---|---|
-| `/` | GET | Strona główna |
-| `/about` | GET | Informacje o aplikacji |
-| `/contact` | GET | Dane kontaktowe |
-| `/register` | GET | Formularz rejestracji |
-| `/register` | POST | Obsługa rejestracji |
-| `/login` | GET | Formularz logowania |
-| `/login` | POST | Obsługa logowania |
-| `/logout` | GET | Wylogowanie |
-| `/members` | GET | Lista zarejestrowanych użytkowników (wymaga zalogowania) |
+| **Repozytoria** | `UserRepository`, `ProductRepository` | Przechowywanie i wyszukiwanie danych. W tym projekcie dane są w pamięci, ale w większej aplikacji byłaby tu baza danych. |
+| **Serwisy** | `CartService`, `OrderService` | Logika aplikacyjna: operacje na koszyku, składanie zamówień, koordynacja repozytoriów. Serwis nie powinien znać szczegółów HTTP. |
+| **Kontrolery** | `AuthController`, `ProductController`, `CartController` | Warstwa HTTP: odczyt danych z `Context`, wywołanie serwisów/repozytoriów, renderowanie szablonu lub przekierowanie. |
 
-Dane użytkowników są przechowywane **w pamięci** (`UserRepository`) — brak bazy danych, co jest celowe
-ze względu na prostotę.
+`JavalinApp` powinien docelowo zajmować się głównie konfiguracją techniczną:
+- konfiguracją Javalina,
+- rejestracją ścieżek,
+- obsługą błędów,
+- plikami statycznymi,
+- silnikiem szablonów.
 
-### Kluczowe klasy
+Nie powinien ręcznie składać całego grafu zależności aplikacji.
 
+### 3. DI i IoC — podstawowe pojęcia
+
+**Dependency Injection (DI)** — wstrzykiwanie zależności. Klasa nie tworzy swoich zależności przez `new`, tylko otrzymuje je z zewnątrz, zwykle przez konstruktor.
+
+Przykład z Lab 8:
+
+```java
+public class AuthController {
+    private final UserRepository users;
+
+    public AuthController(UserRepository users) {
+        this.users = users;
+    }
+}
 ```
-Main.java           — punkt wejścia, tworzy JavalinApp i dodaje konto admina
-JavalinApp.java     — konfiguracja Javalin, definicja ścieżek i handlerów
-UserRepository.java — przechowywanie i wyszukiwanie użytkowników
-User.java / UserType.java — model domenowy
+
+To już jest DI przez konstruktor. Problem polega na tym, że dotąd sami tworzyliśmy `UserRepository` i ręcznie przekazywaliśmy go do kontrolera.
+
+**Inversion of Control (IoC)** — odwrócenie sterowania. Klasa deklaruje, czego potrzebuje, a zewnętrzny kontener tworzy obiekty i dostarcza zależności.
+
+DI jest techniką, a IoC jest szerszą zasadą. Kontener DI, taki jak Guice, jest narzędziem realizującym tę zasadę.
+
+### 4. Co daje kontener DI?
+
+| Aspekt | Bez kontenera | Z kontenerem DI |
+|---|---|---|
+| Tworzenie obiektów | Ręczne `new` w `JavalinApp` i testach | Kontener tworzy obiekty automatycznie |
+| Przekazywanie zależności | Ręczne przekazywanie przez konstruktory | Kontener analizuje konstruktory z `@Inject` |
+| Współdzielenie instancji | Trzeba pilnować samodzielnie | `@Singleton` wymusza jedną instancję |
+| Testowanie | Trzeba odtworzyć cały blok inicjalizacji | Można użyć osobnego modułu testowego |
+| Podmiana implementacji | Zmiany w wielu miejscach | Zmiana bindingu w module |
+
+Koszt: dodatkowa warstwa abstrakcji i konieczność zrozumienia działania kontenera. W zamian dostajemy bardziej uporządkowane składanie aplikacji.
+
+### 5. Google Guice — mechanizm działania
+
+Podstawowy przepływ pracy z Guice:
+
+1. Oznaczamy konstruktor adnotacją `@Inject`.
+2. Tworzymy moduł (`AbstractModule`) z konfiguracją bindingów.
+3. Tworzymy `Injector`.
+4. Pobieramy obiekt główny, np. `JavalinApp`.
+5. Guice rekurencyjnie tworzy wszystkie wymagane zależności.
+
+```text
+Injector
+  └── JavalinApp
+        ├── UserRepository
+        ├── ProductRepository
+        ├── CartService
+        │     └── UserRepository
+        ├── OrderService
+        │     └── UserRepository
+        └── ...
 ```
 
-### Co jest nie tak z kodem startowym?
+Adnotacja `@Inject` może pochodzić z pakietu `com.google.inject` albo ze standardowych pakietów `javax.inject` / `jakarta.inject`. Na tym laboratorium używamy `com.google.inject.Inject`, ponieważ pracujemy bezpośrednio z Guice.
 
-Uruchom aplikację i przejrzyj `JavalinApp.java`. Zauważ:
+---
 
-1. **Wszystkie handlery są metodami prywatnymi jednej klasy** — `JavalinApp` robi zbyt wiele.
-2. **Brak obsługi błędów** — wpisanie nieistniejącego URL daje domyślną stronę błędu Jetty.
-3. **Kontrola dostępu jest zapisana bezpośrednio w handlerze** — sprawdzenie sesji znajduje się wewnątrz `showMembers`.
-4. **Brak komunikatów startowych** — nie wiadomo, czy serwer się uruchomił.
+## Ćwiczenie wstępne: minimalny przykład Guice
 
-Te problemy naprawimy w Części 1.
+> **Cel:** Zobaczyć pełny cykl: interfejs, implementacja, klasa zależna, moduł, injector.
 
-### Zadanie wstępne (obowiązkowe)
+### Zadanie A.1 — Dodanie Guice
 
-Przed rozpoczęciem refaktoryzacji uruchom testy projektu startowego, aby upewnić się, że środowisko jest poprawnie skonfigurowane.
+W `pom.xml` dodaj zależność:
 
-W IntelliJ IDEA: otwórz panel **Maven** (`View → Tool Windows → Maven` lub kliknij zakładkę Maven po prawej stronie), rozwiń Lifecycle, kliknij dwukrotnie `test`.
+```xml
+<dependency>
+    <groupId>com.google.inject</groupId>
+    <artifactId>guice</artifactId>
+    <version>7.0.0</version>
+</dependency>
+```
 
-Alternatywnie w terminalu (w katalogu projektu):
+### Uwaga: ostrzeżenie CVE w IntelliJ
+
+Po dodaniu Guice IntelliJ może zgłosić ostrzeżenie bezpieczeństwa dotyczące biblioteki **Guava**. Guice korzysta z Guavy jako zależności przechodniej (*transitive dependency*). Jeżeli wersja Guavy pobrana przez Maven znajduje się w bazie podatności, IDE wyświetli ostrzeżenie.
+
+Aby wymusić nowszą wersję Guavy, dodaj w `pom.xml` sekcję `<dependencyManagement>`:
+
+```xml
+<dependencyManagement>
+    <dependencies>
+        <dependency>
+            <groupId>com.google.guava</groupId>
+            <artifactId>guava</artifactId>
+            <version>33.5.0-jre</version>
+        </dependency>
+    </dependencies>
+</dependencyManagement>
+```
+
+**Jak to działa?**
+
+`dependencyManagement` nie dodaje biblioteki do projektu samodzielnie. Ta sekcja mówi Mavenowi: „jeśli którakolwiek zależność w projekcie potrzebuje `com.google.guava:guava`, użyj tej wersji”. Guice nadal wprowadza Guavę jako zależność przechodnią, ale Maven wybiera wersję wskazaną w `dependencyManagement`.
+
+Po zmianie odśwież projekt Maven w IntelliJ.
+
+### Zadanie A.2 — Interfejs i implementacja
+
+```java
+package pl.edu.uksw.di;
+
+public interface Greeter {
+    String greet(String name);
+}
+```
+
+```java
+package pl.edu.uksw.di;
+
+public class ConsoleGreeter implements Greeter {
+    @Override
+    public String greet(String name) {
+        return "Cześć, " + name + "!";
+    }
+}
+```
+
+### Zadanie A.3 — Klasa z zależnością
+
+```java
+package pl.edu.uksw.di;
+
+import com.google.inject.Inject;
+
+public class WelcomeService {
+    private final Greeter greeter;
+
+    @Inject
+    public WelcomeService(Greeter greeter) {
+        this.greeter = greeter;
+    }
+
+    public void run() {
+        System.out.println(greeter.greet("Studenci"));
+    }
+}
+```
+
+`WelcomeService` zależy od interfejsu `Greeter`, a nie od klasy `ConsoleGreeter`.
+
+### Zadanie A.4 — Moduł Guice
+
+```java
+package pl.edu.uksw.di;
+
+import com.google.inject.AbstractModule;
+
+public class AppModule extends AbstractModule {
+    @Override
+    protected void configure() {
+        bind(Greeter.class).to(ConsoleGreeter.class);
+    }
+}
+```
+
+### Zadanie A.5 — Uruchomienie
+
+```java
+package pl.edu.uksw.di;
+
+import com.google.inject.Guice;
+import com.google.inject.Injector;
+
+public class Main {
+    public static void main(String[] args) {
+        Injector injector = Guice.createInjector(new AppModule());
+        WelcomeService service = injector.getInstance(WelcomeService.class);
+        service.run();
+    }
+}
+```
+
+Wynik: `Cześć, Studenci!`
+
+W klasie `WelcomeService` nie ma `new ConsoleGreeter()`. Obiekt został utworzony i wstrzyknięty przez Guice.
+
+---
+
+# Część praktyczna (8:40–9:30): Wprowadzenie Guice do aplikacji sklepu
+
+> **Cel obowiązkowy:** przenieść tworzenie repozytoriów i serwisów z `JavalinApp` do Guice.  
+> **Cel dodatkowy:** przygotować kontrolery do wstrzykiwania przez Guice.
+
+Po każdym etapie uruchom:
+
 ```bash
-mvn clean test
+mvn test
 ```
 
-Wszystkie testy w klasie `ApplicationTests` powinny przejść. Jeśli nie — sprawdź, czy Firefox jest zainstalowany (lub zmień konfigurację sterownika w `SeleniumTestBase` na Chrome) i czy WebDriverManager może pobrać sterownik.
-
 ---
 
-## Część 1 (8:30–9:00): Refaktoryzacja i obsługa błędów
+## Część 1 (8:40–9:05): Guice, `UserRepository`, `AppModule`, `Main`
 
-> **Szacowany czas:** 30 minut  
-> **Zadania obowiązkowe:** 1.1a, 1.1b, 1.1c, 1.2a, 1.2b, 1.4b  
-> **Zadania opcjonalne (jeśli starczy czasu):** 1.3a, 1.3b
+### Kontekst
 
----
-
-### 1.1 Wyodrębnienie kontrolerów
-
-Dobrze zaprojektowana aplikacja webowa rozdziela odpowiedzialności między klasy. Wzorzec **MVC** (*Model–View–Controller*)
-mówi, że logika obsługi żądań (kontrolery) powinna być oddzielona od konfiguracji serwera.
-
-W Javalin handlery to metody przyjmujące `Context` — naturalnym rozwiązaniem są klasy grupujące powiązane
-handlery i przyjmujące zależności przez konstruktor.
-
-Po refaktoryzacji `JavalinApp` powinien odpowiadać głównie za konfigurację serwera, rejestrację ścieżek
-i składanie zależności. Logika obsługi żądań powinna trafić do kontrolerów.
-
-**Materiały:**
-- [Javalin Documentation — Handlers](https://javalin.io/documentation#handlers)
-- [Javalin Samples — MVC example](https://github.com/javalin/javalin-samples)
-
-**Zadanie 1.1a (obowiązkowe)**  
-Utwórz klasę `PageController.java` z metodami dla stron statycznych:
+W `JavalinApp` istnieje pole:
 
 ```java
-package pl.edu.uksw.java;
+private final UserRepository users = new UserRepository();
+```
 
-import io.javalin.http.Context;
+Ten obiekt jest używany w kilku miejscach. Powinien istnieć jako jedna wspólna instancja w aplikacji, dlatego oznaczymy go jako `@Singleton`.
 
-class PageController {
-    void home(Context ctx)    { ctx.render("home.html"); }
-    void about(Context ctx)   { ctx.render("about.html"); }
-    void contact(Context ctx) { ctx.render("contact.html"); }
+### Zadanie 1.1 — Przygotowanie `UserRepository`
+
+W `UserRepository.java`:
+
+```java
+import com.google.inject.Inject;
+import com.google.inject.Singleton;
+
+@Singleton
+public class UserRepository {
+    private final List<User> users = new ArrayList<>();
+
+    @Inject
+    public UserRepository() {
+    }
+
+    // reszta metod bez zmian
 }
 ```
 
-Podepnij kontroler do ścieżek w `JavalinApp`, zastępując lambdy referencjami do metod:
+**Dlaczego `@Singleton`?**  
+Bez tej adnotacji Guice mógłby tworzyć osobne instancje repozytorium dla różnych klas. Wtedy użytkownik zarejestrowany przez `AuthController` mógłby nie być widoczny w `CartService` lub `OrderService`.
 
-```java
-var pages = new PageController();
-
-config.routes.get("/",        pages::home);
-config.routes.get("/about",   pages::about);
-config.routes.get("/contact", pages::contact);
-```
-
-Uruchom aplikację i sprawdź, że strony nadal działają.
-
-**Zadanie 1.1b (obowiązkowe)**  
-Utwórz `AuthController.java` z metodami obsługującymi rejestrację i logowanie.
-Kontroler przyjmuje `UserRepository` przez konstruktor:
+### Zadanie 1.2 — Utworzenie `AppModule`
 
 ```java
 package pl.edu.uksw.java;
 
-import io.javalin.http.Context;
-import java.util.Map;
+import com.google.inject.AbstractModule;
+import com.google.inject.name.Names;
 
-class AuthController {
+public class AppModule extends AbstractModule {
+    private final int port;
+
+    public AppModule(int port) {
+        this.port = port;
+    }
+
+    @Override
+    protected void configure() {
+        bindConstant().annotatedWith(Names.named("port")).to(port);
+
+        bind(UserRepository.class);
+    }
+}
+```
+
+Binding `UserRepository.class` nie jest technicznie konieczny, jeśli klasa ma konstruktor `@Inject`, ale zostawiamy go w module dla czytelności konfiguracji.
+
+### Zadanie 1.3 — Zmiana `JavalinApp`
+
+Usuń ręczną inicjalizację:
+
+```java
+private final UserRepository users = new UserRepository();
+```
+
+Zmień konstruktor:
+
+```java
+import com.google.inject.Inject;
+import com.google.inject.name.Named;
+
+public class JavalinApp {
+    private final int port;
+    private final Javalin app;
     private final UserRepository users;
 
-    AuthController(UserRepository users) {
+    @Inject
+    public JavalinApp(@Named("port") int port,
+                      UserRepository users) {
+        this.port = port;
+        this.users = users;
+
+        // pozostała część konstruktora na razie bez zmian
+    }
+}
+```
+
+Port jest prostą wartością (`int`), dlatego oznaczamy go nazwą `@Named("port")`.
+
+### Zadanie 1.4 — Zmiana `Main`
+
+```java
+package pl.edu.uksw.java;
+
+import com.google.inject.Guice;
+import com.google.inject.Injector;
+
+public class Main {
+    public static void main(String[] args) {
+        Injector injector = Guice.createInjector(new AppModule(8089));
+
+        JavalinApp app = injector.getInstance(JavalinApp.class);
+        app.setupAdminAccount("admin", "admin");
+        app.start();
+    }
+}
+```
+
+**Sprawdzenie:** aplikacja powinna uruchomić się jak wcześniej. Testy powinny przechodzić.
+
+---
+
+## Część 2 (9:05–9:20): Repozytoria i serwisy
+
+### Kontekst
+
+W `JavalinApp` nadal znajdują się ręczne inicjalizacje:
+
+```java
+var productRepo  = new ProductRepository();
+var cartService  = new CartService(users);
+var orderService = new OrderService(users);
+```
+
+Te klasy nie powinny być tworzone przez `JavalinApp`. Repozytoria przechowują dane, a serwisy wykonują operacje aplikacyjne. Przenosimy ich tworzenie do Guice.
+
+### Zadanie 2.1 — `ProductRepository`
+
+```java
+import com.google.inject.Inject;
+import com.google.inject.Singleton;
+
+@Singleton
+public class ProductRepository {
+    private final Map<String, Product> products = new LinkedHashMap<>();
+
+    @Inject
+    public ProductRepository() {
+        seed();
+    }
+
+    // reszta metod bez zmian
+}
+```
+
+### Zadanie 2.2 — `CartService` i `OrderService`
+
+```java
+import com.google.inject.Inject;
+import com.google.inject.Singleton;
+
+@Singleton
+public class CartService {
+    private final UserRepository userRepo;
+
+    @Inject
+    public CartService(UserRepository userRepo) {
+        this.userRepo = userRepo;
+    }
+
+    // reszta metod bez zmian
+}
+```
+
+Analogicznie dla `OrderService`:
+
+```java
+import com.google.inject.Inject;
+import com.google.inject.Singleton;
+
+@Singleton
+public class OrderService {
+    private final UserRepository userRepo;
+
+    @Inject
+    public OrderService(UserRepository userRepo) {
+        this.userRepo = userRepo;
+    }
+
+    // reszta metod bez zmian
+}
+```
+
+Serwisy oznaczamy jako `@Singleton`, ponieważ są bezstanowe — przechowują tylko zależności, a nie dane konkretnego użytkownika.
+
+### Zadanie 2.3 — Aktualizacja `AppModule`
+
+```java
+@Override
+protected void configure() {
+    bindConstant().annotatedWith(Names.named("port")).to(port);
+
+    bind(UserRepository.class);
+    bind(ProductRepository.class);
+    bind(CartService.class);
+    bind(OrderService.class);
+}
+```
+
+### Zadanie 2.4 — Aktualizacja konstruktora `JavalinApp`
+
+```java
+@Inject
+public JavalinApp(@Named("port") int port,
+                  UserRepository users,
+                  ProductRepository productRepo,
+                  CartService cartService,
+                  OrderService orderService) {
+   this.port = port;
+   this.users = users;
+
+   var pages    = new PageController();
+   var auth     = new AuthController(users);
+   var members  = new MemberController(users);
+   var products = new ProductController(productRepo, cartService);
+   var cart     = new CartController(cartService, productRepo);
+   var checkout = new CheckoutController(cartService, orderService, productRepo);
+   var orders   = new OrderController(orderService, productRepo);
+
+   this.app = Javalin.create(config -> {
+      // konfiguracja Javalin bez zmian
+   });
+}
+```
+
+**Sprawdzenie:** po tej zmianie `JavalinApp` nie tworzy już ręcznie repozytoriów ani serwisów. Nadal tworzy kontrolery — to zostawiamy na zadanie dodatkowe.
+
+---
+
+## Część 3 (9:20–9:30): Kontrolery — przykład i dalsza refaktoryzacja
+
+### Kontekst
+
+Kontrolery również można tworzyć przez Guice. Wymaga to dodania `@Inject` do konstruktorów i przekazania gotowych kontrolerów do `JavalinApp`.
+
+Na zajęciach wykonujemy przykład na jednym kontrolerze. Pełną refaktoryzację wszystkich kontrolerów zostawiamy jako zadanie domowe.
+
+### Zadanie 3.1 — Przykład: `AuthController`
+
+```java
+import com.google.inject.Inject;
+
+public class AuthController {
+    private final UserRepository users;
+
+    @Inject
+    public AuthController(UserRepository users) {
         this.users = users;
     }
 
-    void showRegister(Context ctx) {
-        ctx.render("register.html", errorModel(ctx.queryParam("error")));
-    }
-
-    void handleRegister(Context ctx) {
-        String username = ctx.formParam("username");
-        String password = ctx.formParam("password");
-
-        if (username == null || username.isBlank()
-                || password == null || password.isBlank()) {
-            ctx.redirect("/register?error=empty_fields");
-            return;
-        }
-        if (users.existsByUsername(username)) {
-            ctx.redirect("/register?error=username_taken");
-            return;
-        }
-
-        users.add(new User(username, password));
-        ctx.redirect("/login");
-    }
-
-    void showLogin(Context ctx) {
-        ctx.render("login.html", errorModel(ctx.queryParam("error")));
-    }
-
-    void handleLogin(Context ctx) {
-        String username = ctx.formParam("username");
-        String password = ctx.formParam("password");
-
-        if (users.authenticate(username, password)) {
-            ctx.sessionAttribute("user", username);
-            ctx.redirect("/");
-        } else {
-            ctx.redirect("/login?error=invalid_credentials");
-        }
-    }
-
-    void handleLogout(Context ctx) {
-        ctx.sessionAttribute("user", null);
-        ctx.redirect("/");
-    }
-
-    static Map<String, Object> errorModel(String error) {
-        return error != null ? Map.of("error", error) : Map.of();
-    }
+    public void showRegister(Context ctx) { /* ... */ }
+    public void handleRegister(Context ctx) { /* ... */ }
+    public void showLogin(Context ctx) { /* ... */ }
+    public void handleLogin(Context ctx) { /* ... */ }
+    public void handleLogout(Context ctx) { /* ... */ }
 }
 ```
 
-**Zadanie 1.1c (obowiązkowe)**  
-Utwórz `MemberController.java` z metodą `showMembers`. Na razie zostaw
-sprawdzenie sesji bezpośrednio w handlerze — zmienimy to w następnym kroku (jeśli starczy czasu):
+Jeżeli metody kontrolera są używane jako referencje do metod (`auth::showLogin`) z klasy `JavalinApp`, muszą być widoczne z tego miejsca. Najprościej ustawić je jako `public`.
+
+### Zadanie 3.2 — Wstrzyknięcie `AuthController` do `JavalinApp`
+
+Dodaj `AuthController` jako parametr konstruktora:
 
 ```java
-package pl.edu.uksw.java;
-
-import io.javalin.http.Context;
-import java.util.Map;
-
-class MemberController {
-    private final UserRepository users;
-
-    MemberController(UserRepository users) {
-        this.users = users;
-    }
-
-    void showMembers(Context ctx) {
-        if (ctx.sessionAttribute("user") == null) {
-            ctx.status(403).result("Forbidden: login required");
-            return;
-        }
-        ctx.render("members.html", Map.of("users", users.allUsernames()));
-    }
-}
-```
-
-Zaktualizuj `JavalinApp` tak, aby konfigurował ścieżki za pomocą trzech kontrolerów. Sprawdź, czy
-aplikacja działa identycznie jak przed refaktoryzacją.
-
-> **Sprawdzenie:** Czy plik `JavalinApp.java` nie zawiera już logiki biznesowej — tylko konfigurację?
-
-### 1.2 Obsługa błędów HTTP
-
-Domyślne strony błędów Jetty są mało przyjazne dla użytkownika i mogą ujawniać szczegóły techniczne. Javalin 7 pozwala zdefiniować
-własne handlery błędów i wyjątków wewnątrz bloku konfiguracyjnego.
-
-W tej części rozróżniamy dwa mechanizmy:
-- **handler błędu HTTP** (`error`) — gdy znamy już kod odpowiedzi, np. 404,
-- **handler wyjątku** (`exception`) — gdy w trakcie obsługi żądania został zgłoszony wyjątek.
-
-**Materiały:**
-- [Javalin Documentation — Error Mapping](https://javalin.io/documentation#error-mapping)
-- [Javalin Documentation — Exception Handling](https://javalin.io/documentation#exception-handling)
-- [Javalin 7 Migration Guide — Exception handlers are now configured upfront](https://javalin.io/migration-guide-javalin-6-to-7)
-
-> **Uwaga Javalin 7:** Handlery błędów i wyjątków definiuje się przez `config.routes.error(...)` i
-> `config.routes.exception(...)` — tak samo jak ścieżki. Nie ma już `app.error(...)` poza blokiem konfiguracyjnym.
-
-**Zadanie 1.2a (obowiązkowe)**  
-Dodaj szablon `error.html` do katalogu `templates/`:
-
-```html
-<!DOCTYPE html>
-<html xmlns:th="http://www.thymeleaf.org">
-<head>
-    <meta charset="UTF-8">
-    <title th:text="'Błąd ' + ${code}">Błąd</title>
-    <link rel="stylesheet" th:href="@{/style/style.css}">
-</head>
-<body>
-    <h1 th:text="'Błąd ' + ${code}">Błąd</h1>
-    <p th:text="${message}">Coś poszło nie tak.</p>
-    <a href="/">Powrót na stronę główną</a>
-</body>
-</html>
-```
-
-**Zadanie 1.2b (obowiązkowe)**  
-Dodaj handler błędu 404 i ogólny handler wyjątków w bloku konfiguracyjnym `JavalinApp`:
-
-```java
-config.routes.error(404, ctx ->
-    ctx.render("error.html", Map.of(
-        "code",    "404",
-        "message", "Nie znaleziono strony: " + ctx.path()
-    ))
-);
-
-config.routes.exception(Exception.class, (e, ctx) -> {
-    e.printStackTrace();
-    ctx.status(500).render("error.html", Map.of(
-        "code",    "500",
-        "message", "Wewnętrzny błąd serwera"
-    ));
-});
-```
-
-Przetestuj: wpisz nieistniejący URL w przeglądarce. Powinna się wyświetlić własna strona 404.
-
----
-
-### 1.3 Kontrola dostępu przez wyjątek (opcjonalne)
-
-> **Wykonaj to zadanie tylko jeśli masz jeszcze czas przed 9:00.**
-
-Sprawdzenie `if (session == null)` wewnątrz handlera działa, ale nie skaluje się — przy wielu chronionych
-stronach trzeba powielać tę logikę. Lepszym podejściem jest zgłoszenie wyjątku, który zostanie przechwycony przez
-centralny handler.
-
-Javalin oferuje rodzinę gotowych klas wyjątków odpowiadających kodom HTTP, m.in.:
-- `BadRequestResponse` (400)
-- `UnauthorizedResponse` (401)
-- `ForbiddenResponse` (403)
-- `NotFoundResponse` (404)
-- `InternalServerErrorResponse` (500)
-
-Każdy z nich można przechwycić osobno albo zbiorczo przez nadklasę
-`HttpResponseException`. Wykorzystamy `UnauthorizedResponse` jako sygnał „wymagane logowanie" rzucany
-z handlerów chronionych zasobów.
-
-**Materiały:**
-- [Javalin Documentation — HTTP exceptions](https://javalin.io/documentation#http-exceptions)
-
-**Zadanie 1.3a (zalecane)**  
-Dodaj do `MemberController` statyczną metodę pomocniczą `requireLogin`:
-
-```java
-import io.javalin.http.UnauthorizedResponse;
-
-static void requireLogin(Context ctx) {
-    if (ctx.sessionAttribute("user") == null) {
-        throw new UnauthorizedResponse("Login required");
-    }
-}
-```
-
-Zaktualizuj `showMembers`, aby używał tej metody zamiast ręcznego sprawdzenia:
-
-```java
-void showMembers(Context ctx) {
-    requireLogin(ctx);
-    ctx.render("members.html", Map.of("users", users.allUsernames()));
-}
-```
-
-**Zadanie 1.3b (zalecane)**  
-Dodaj dedykowany handler dla `UnauthorizedResponse` w bloku konfiguracyjnym,
-przed ogólnym handlerem `Exception.class`:
-
-```java
-config.routes.exception(UnauthorizedResponse.class, (e, ctx) ->
-    ctx.redirect("/login?error=login_required")
-);
-```
-
-Przetestuj: wejdź na `/members` bez logowania. Powinieneś zostać przekierowany na `/login`.
-
-> **Dyskusja:** Dlaczego dedykowany handler `UnauthorizedResponse` warto zdefiniować przed ogólnym
-> handlerem `Exception.class`? Co mogłoby się stać, gdyby wyjątek został przechwycony przez zbyt ogólną obsługę?
-
-### 1.4 Zdarzenia cyklu życia serwera
-
-W bloku konfiguracyjnym `Javalin.create()` można zdefiniować zdarzenia cyklu życia serwera, takie jak `serverStarting` i `serverStarted`, a także wszystkie ustawienia infrastruktury przed uruchomieniem aplikacji.
-
-Zwróć uwagę, że w projekcie startowym port jest przekazywany w konstruktorze `JavalinApp`, a metoda `start()` nie wymaga argumentów — wewnętrznie wywołuje `app.start(port)`.
-
-**Materiały:**
-- [Javalin Documentation — Configuration](https://javalin.io/documentation#configuration)
-
-**Zadanie 1.4a (obowiązkowe)**  
-Dodaj zdarzenia cyklu życia do bloku konfiguracyjnego w `JavalinApp`:
-
-```java
-config.events.serverStarting(() ->
-    System.out.println("Uruchamianie serwera na porcie " + port + "..."));
-config.events.serverStarted(() ->
-    System.out.println("Serwer gotowy: http://localhost:" + port));
-```
-
-Uruchom aplikację i sprawdź komunikaty w konsoli.
-
----
-
-## Część 2 (9:00–9:30): Testy end-to-end z Selenium
-
-> **Szacowany czas:** 30 minut  
-> **Zadania obowiązkowe:** 2.3a, 2.3b, 2.3c, 2.3d  
-> **Zadania opcjonalne:** 2.4 (Page Object)
-
----
-
-### 2.1 Czym jest Selenium i po co go używamy?
-
-Testy jednostkowe (JUnit) sprawdzają pojedyncze klasy. Testy integracyjne sprawdzają współpracę
-komponentów. **Testy end-to-end** (E2E) sprawdzają całą aplikację z perspektywy użytkownika — uruchamiają
-prawdziwą przeglądarkę i symulują kliknięcia.
-
-**Selenium WebDriver** steruje przeglądarką programowo: otwiera strony, wypełnia formularze, klika przyciski
-i odczytuje treść. `WebDriverManager` automatycznie pobiera i konfiguruje odpowiedni sterownik przeglądarki.
-
-**`JavalinTest`** to narzędzie testowe wbudowane w Javalin. Wywołanie
-`JavalinTest.test(server, (srv, client) -> {...})` uruchamia podany serwer na losowym, wolnym porcie,
-wykonuje lambdę z dostępem do klienta HTTP (`client.getOrigin()` zwraca bazowy URL serwera), a po
-zakończeniu lambdy zatrzymuje serwer. Dzięki temu każdy test działa na świeżym, niezależnym serwerze —
-testy nie wymagają ręcznego sprzątania oraz nie występuje ryzyko kolizji portów.
-
-**Materiały:**
-- [Selenium Documentation](https://www.selenium.dev/documentation/)
-- [Selenium WebDriver API](https://www.selenium.dev/documentation/webdriver/)
-- [WebDriverManager](https://bonigarcia.dev/webdrivermanager/)
-- [Javalin Testing](https://javalin.io/documentation#testing)
-
-### 2.2 Klasa bazowa testów
-
-Projekt startowy zawiera klasę `SeleniumTestBase`. Zwróć uwagę, że `JavalinApp` udostępnia instancję `Javalin` przez getter — jest on wykorzystywany w testach:
-
-```java
-// W JavalinApp:
-public Javalin getServer() { return app; }
-```
-
-> **Uwaga:** W testach `JavalinApp` tworzy instancję `Javalin`, ale nie uruchamia jej samodzielnie
-> na stałym porcie. Uruchomieniem i zatrzymaniem serwera na potrzeby testu zarządza `JavalinTest.test(...)`.
-
-Klasa bazowa z projektu startowego:
-
-```java
-package pl.edu.uksw.java;
-
-import io.github.bonigarcia.wdm.WebDriverManager;
-import io.javalin.Javalin;
-import io.javalin.testtools.JavalinTest;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.BeforeEach;
-import org.openqa.selenium.WebDriver;
-import org.openqa.selenium.firefox.FirefoxDriver;
-import org.openqa.selenium.firefox.FirefoxOptions;
-
-/**
- * Klasa bazowa dla testów Selenium aplikacji Javalin.
- *
- * Aby użyć Chrome zamiast Firefox, zmień:
- *   WebDriverManager.firefoxdriver() → WebDriverManager.chromedriver()
- *   FirefoxOptions         → ChromeOptions
- *   FirefoxDriver          → ChromeDriver
- * i w pom.xml:
- *   selenium-firefox-driver → selenium-chrome-driver
- */
-class SeleniumTestBase {
-    WebDriver driver;
-
-    final JavalinApp app;
-    final Javalin server;
-    final User admin;
-
-    public SeleniumTestBase() {
-        app = new JavalinApp(8080);
-        server = app.getServer();
-        admin = app.setupAdminAccount("admin", "admin");
-    }
-
-    @BeforeAll
-    static void setupAll() {
-        WebDriverManager.firefoxdriver().setup();
-    }
-
-    @BeforeEach
-    void setupDriver() {
-        FirefoxOptions options = new FirefoxOptions();
-        options.addArguments("--headless");
-        options.addArguments("--disable-gpu");
-        driver = new FirefoxDriver(options);
-    }
-
-    @AfterEach
-    void teardown() {
-        if (driver != null) {
-            driver.quit();
-        }
-    }
-}
-```
-
-### 2.3 Analiza istniejących testów
-
-Projekt startowy zawiera gotowe testy w klasie `ApplicationTests`. Każdy z nich ilustruje inny aspekt
-działania Selenium z Javalin.
-
-**Zadanie 2.3a (obowiązkowe)**  
-Uruchom gotowe testy z projektu startowego. Sprawdź, które przechodzą, a które nie.
-
-W IntelliJ IDEA: otwórz klasę `ApplicationTests`, kliknij zieloną ikonę obok nazwy klasy lub pojedynczej metody `▶ Run`.
-Alternatywnie użyj panelu Maven → Lifecycle → `test`.
-
-**Zadanie 2.3b (obowiązkowe)**  
-Przeanalizuj istniejący test sprawdzający tytuł strony głównej:
-
-```java
-@Test
-public void testMainPageTitle() {
-    JavalinTest.test(server, (server, client) -> {
-        driver.get(client.getOrigin() + "/");
-        String title = driver.getTitle();
-        assertEquals("Javalin App", title, "Title mismatch on main page");
+@Inject
+public JavalinApp(@Named("port") int port,
+                  UserRepository users,
+                  ProductRepository productRepo,
+                  CartService cartService,
+                  OrderService orderService,
+                  AuthController auth) {
+    this.port = port;
+    this.users = users;
+
+    var pages    = new PageController();
+    var members  = new MemberController(users);
+    var products = new ProductController(productRepo, cartService);
+    var cart     = new CartController(cartService, productRepo);
+    var checkout = new CheckoutController(cartService, orderService, productRepo);
+    var orders   = new OrderController(orderService, productRepo);
+
+    this.app = Javalin.create(config -> {
+        config.routes.get("/register", auth::showRegister);
+        config.routes.post("/register", auth::handleRegister);
+        config.routes.get("/login", auth::showLogin);
+        config.routes.post("/login", auth::handleLogin);
+        config.routes.get("/logout", auth::handleLogout);
+
+        // pozostałe ścieżki bez zmian
     });
 }
 ```
 
-Zwróć uwagę na:
-- `JavalinTest.test(server, ...)` — uruchamia serwer na losowym porcie i zapewnia `client.getOrigin()`.
-- `driver.get(url)` — otwiera stronę w przeglądarce.
-- `driver.getTitle()` — odczytuje tytuł strony z tagu `<title>`.
+**Sprawdzenie:** aplikacja nadal powinna działać, a testy powinny przechodzić.
 
-**Zadanie 2.3c (obowiązkowe)**  
-Przeanalizuj test sprawdzający poprawne logowanie:
+---
 
-```java
-@Test
-public void testLoginWithValidCredentials() {
-    JavalinTest.test(server, (server, client) -> {
-        driver.get(client.getOrigin() + "/login");
+## Zadanie domowe
 
-        driver.findElement(By.name("username")).sendKeys(admin.getUsername());
-        driver.findElement(By.name("password")).sendKeys(admin.getPassword());
-        driver.findElement(By.cssSelector("button[type='submit']")).click();
+Dokończ refaktoryzację kontrolerów:
 
-        assertEquals(
-            client.getOrigin() + "/",
-            driver.getCurrentUrl(),
-            "Po zalogowaniu oczekiwano przekierowania na stronę główną"
-        );
-    });
-}
-```
+1. Dodaj `@Inject` do konstruktorów:
+    - `PageController`
+    - `MemberController`
+    - `ProductController`
+    - `CartController`
+    - `CheckoutController`
+    - `OrderController`
 
-Zwróć uwagę na:
-- `findElement(By.name("..."))` — wyszukiwanie elementów po atrybucie `name`.
-- `sendKeys(...)` — wpisywanie tekstu do pól formularza.
-- `click()` — symulacja kliknięcia przycisku.
-- `getCurrentUrl()` — odczyt aktualnego adresu przeglądarki po przekierowaniu.
+2. Dodaj kontrolery do konstruktora `JavalinApp`.
 
-**Zadanie 2.3d (obowiązkowe)**  
-Przeanalizuj test pełnego przepływu rejestracji:
+3. Usuń z `JavalinApp` wszystkie wywołania `new` dotyczące klas biznesowych i kontrolerów.
 
-```java
-@Test
-public void testRegistrationFlow() {
-    JavalinTest.test(server, (server, client) -> {
-        driver.get(client.getOrigin() + "/register");
+4. Uruchom `mvn test`.
 
-        String uniqueUsername = "testuser" + System.currentTimeMillis();
-        driver.findElement(By.name("username")).sendKeys(uniqueUsername);
-        driver.findElement(By.name("password")).sendKeys("password123");
-        driver.findElement(By.cssSelector("button[type='submit']")).click();
-
-        assertEquals(
-            client.getOrigin() + "/login",
-            driver.getCurrentUrl(),
-            "Po rejestracji oczekiwano przekierowania na stronę logowania"
-        );
-    });
-}
-```
-
-Zwróć uwagę na:
-- `System.currentTimeMillis()` — generowanie unikalnej nazwy użytkownika, dzięki czemu test można uruchamiać wielokrotnie bez konfliktów.
-
-### 2.4 Page Object Pattern (opcjonalne)
-
-> **Uwaga:** Ta sekcja jest **opcjonalna** i raczej nie zmieści się w czasie zajęć.
-> Pełny przewodnik znajduje się w **Dodatku B.6**.
-
-Powielanie selektorów CSS w wielu testach jest kruche — zmiana jednego elementu HTML wymaga aktualizacji
-wszystkich testów. **Page Object Model** to klasa reprezentująca jedną stronę: enkapsuluje lokatory i udostępnia
-metody opisujące akcje użytkownika.
-
-W projekcie startowym znajdziesz już przykład `RegisterPage` (klasa wewnętrzna w `ApplicationTests`).
-
-**Materiały:**
-- [Selenium — Page Object Model](https://www.selenium.dev/documentation/test_practices/encouraged/page_object_models/)
-
-**Zadanie 2.4a (opcjonalne)**  
-Utwórz `LoginPage` analogicznie do `RegisterPage` i napisz test logowania korzystający z Page Object.
-
-**Zadanie 2.4b (opcjonalne)**  
-Napisz test sprawdzający, że po zalogowaniu strona `/members` jest dostępna i zawiera nazwę
-zalogowanego użytkownika.
+Docelowo `JavalinApp` powinien konfigurować Javalin, ścieżki i obsługę błędów, ale nie powinien ręcznie tworzyć repozytoriów, serwisów ani kontrolerów.
 
 ---
 
 ## Podsumowanie
 
-Na laboratorium przekształciliśmy monolityczną klasę `JavalinApp` w bardziej modularną strukturę.
-Kluczowe wnioski:
+Na laboratorium wprowadziliśmy Google Guice jako kontener DI:
 
-- **Podział na kontrolery** sprawia, że każda klasa ma jedną odpowiedzialność — łatwiej ją czytać, testować i modyfikować.
-- **Obsługa błędów przez wyjątki** (`UnauthorizedResponse`, `config.routes.exception`) centralizuje logikę — jeden handler dla wielu ścieżek.
-- **Zdarzenia cyklu życia** pozwalają śledzić stan serwera i wypisywać diagnostykę.
-- **Testy Selenium** weryfikują aplikację z perspektywy przeglądarki — pozwalają wykryć błędy, których nie ujawniają testy jednostkowe.
-- **Page Object** eliminuje powielanie selektorów i sprawia, że testy są odporniejsze na zmiany HTML.
+- `@Inject` na konstruktorze informuje Guice, jak utworzyć obiekt i jakie zależności są wymagane.
+- `@Singleton` zapewnia jedną współdzieloną instancję klasy w ramach kontenera.
+- `AbstractModule` centralizuje konfigurację kontenera.
+- `Injector` tworzy graf zależności i pozwala pobrać obiekt główny aplikacji.
+- Repozytoria odpowiadają za dane, serwisy za logikę aplikacyjną, kontrolery za obsługę HTTP.
 
-**Git:** Po zakończeniu zajęć wykonaj commit z komunikatem: *„Lab 8 complete: controllers, error handling, Selenium tests"*.
+Po wykonaniu części obowiązkowej Guice zarządza repozytoriami i serwisami. Pełne przeniesienie kontrolerów do Guice jest naturalnym dalszym krokiem i przygotowuje do pracy ze Springiem, gdzie DI i IoC są podstawą całego frameworka.
 
----
-
-## Dodatek A: Pozostałe funkcje rozszerzonej aplikacji
-
-> Ten dodatek opisuje funkcje, które możesz zaimplementować samodzielnie
-> po zajęciach lub traktować jako materiał referencyjny.
-
-### A.1 Walidacja danych wejściowych z Javalin 7
-
-Javalin 7 zmienił API walidacji — metoda `.get()` zwraca teraz wartość nullable, a `.required().get()` gwarantuje
-wartość niepustą. Nieudana walidacja rzuca `ValidationException`, który można przechwycić centralnie.
-
-**Materiały:**
-- [Javalin 7 Migration Guide — Validation API now returns nullable types](https://javalin.io/migration-guide-javalin-6-to-7)
-- [Javalin Documentation — Validation](https://javalin.io/documentation#validation)
-
-```java
-// Javalin 7 — wymagana wartość
-String username = ctx.formParamAsClass("username", String.class)
-    .check(s -> !s.isBlank(), "Nazwa użytkownika nie może być pusta")
-    .required()
-    .get();
-
-// Handler walidacji w bloku konfiguracyjnym:
-config.routes.exception(ValidationException.class, (e, ctx) ->
-    ctx.redirect("/register?error=validation")
-);
-```
-
-Porównaj z poprzednim podejściem ręcznego sprawdzania `if (username == null || username.isBlank())`.
-Walidator Javalina wyraźnie opisuje **co** jest wymagane i **dlaczego** wartość jest niepoprawna.
-
-### A.2 Zróżnicowane strony błędów
-
-Zamiast jednego szablonu dla wszystkich błędów, można zarejestrować osobne handlery dla różnych kodów:
-
-```java
-config.routes.error(404, ctx ->
-    ctx.render("error.html", Map.of("code", "404", "message", "Strona nie istnieje"))
-);
-config.routes.error(403, ctx ->
-    ctx.render("error.html", Map.of("code", "403", "message", "Brak dostępu"))
-);
-config.routes.error(500, ctx ->
-    ctx.render("error.html", Map.of("code", "500", "message", "Błąd serwera"))
-);
-```
-
-### A.3 Rozszerzenie `requireLogin` na wiele ścieżek
-
-Metodę `requireLogin` można wywołać z dowolnego handlera. Przy większej liczbie chronionych ścieżek
-warto rozważyć użycie `config.routes.before(path, handler)` — handlera wykonywanego przed każdym
-żądaniem pasującym do wzorca:
-
-```java
-// Wykonaj requireLogin przed każdym żądaniem do /members/*
-config.routes.before("/members/*", ctx -> MemberController.requireLogin(ctx));
-```
-
-**Materiały:**
-- [Javalin Documentation — Before handlers](https://javalin.io/documentation#before-handlers)
-
----
-
-## Dodatek B: Selenium — szczegółowy przewodnik
-
-### B.1 Architektura testów Selenium
-
-```
-Test JUnit
-    └── JavalinTest.test()        — uruchamia serwer na losowym porcie 
-            └── WebDriver         — steruje przeglądarką
-                    └── Przeglądarka (Firefox/Chrome) — wykonuje akcje
-```
-
-`JavalinTest.test()` zapewnia izolację testów — każdy test dostaje świeży serwer, co eliminuje konflikty między testami.
-
-**Materiały:**
-- [Javalin Testing Documentation](https://javalin.io/documentation#testing)
-- [Selenium WebDriver — Getting Started](https://www.selenium.dev/documentation/webdriver/getting_started/)
-- [WebDriverManager — Dokumentacja](https://bonigarcia.dev/webdrivermanager/)
-
-### B.2 Podstawowe operacje WebDriver
-
-```java
-// Nawigacja
-driver.get("http://localhost:8089/");
-driver.navigate().back();
-driver.navigate().refresh();
-
-// Znajdowanie elementów
-WebElement button = driver.findElement(By.cssSelector("button[type='submit']"));
-WebElement input  = driver.findElement(By.name("username"));
-WebElement header = driver.findElement(By.tagName("h1"));
-WebElement byId   = driver.findElement(By.id("error-message"));
-
-// Interakcje
-input.sendKeys("jan");           // wpisz tekst
-input.clear();                   // wyczyść pole
-button.click();                  // kliknij
-String text = header.getText();  // odczytaj tekst
-
-// Odczyt stanu
-String url   = driver.getCurrentUrl();
-String title = driver.getTitle();
-String body  = driver.findElement(By.tagName("body")).getText();
-```
-
-**Materiały:**
-- [Selenium — Finding Web Elements](https://www.selenium.dev/documentation/webdriver/elements/finders/)
-- [Selenium — Web Element Interactions](https://www.selenium.dev/documentation/webdriver/elements/interactions/)
-
-### B.3 Czekanie na elementy
-
-Przeglądarki ładują strony asynchronicznie. Jeśli test szuka elementu zanim strona się załaduje, rzuca
-`NoSuchElementException`. Rozwiązanie: **jawne czekanie** (`WebDriverWait`).
-
-```java
-import org.openqa.selenium.support.ui.WebDriverWait;
-import org.openqa.selenium.support.ui.ExpectedConditions;
-import java.time.Duration;
-
-WebDriverWait wait = new WebDriverWait(driver, Duration.ofSeconds(5));
-
-// Czekaj, aż element będzie widoczny
-WebElement element = wait.until(
-    ExpectedConditions.visibilityOfElementLocated(By.id("error-message"))
-);
-
-// Czekaj, aż URL będzie zawierał wskazany fragment
-wait.until(ExpectedConditions.urlContains("/login"));
-```
-
-**Unikaj** `Thread.sleep()` — jest wolny i kruchy. Jawne czekanie kończy się natychmiast po spełnieniu warunku.
-
-**Materiały:**
-- [Selenium — Waits](https://www.selenium.dev/documentation/webdriver/waits/)
-
-### B.4 Tryb headless vs. tryb okienkowy
-
-W testach CI (np. GitHub Actions) przeglądarka nie ma dostępu do ekranu — wymagany jest tryb headless.
-Podczas debugowania warto wyłączyć `--headless`, żeby zobaczyć, co robi test:
-
-```java
-FirefoxOptions options = new FirefoxOptions();
-// options.addArguments("--headless");  // zakomentuj podczas debugowania
-options.addArguments("--disable-gpu");
-driver = new FirefoxDriver(options);
-```
-
-### B.5 Debugowanie nieudanych testów
-
-Gdy test nie przechodzi, zrzut ekranu pomaga zrozumieć, co przeglądarka „widziała”:
-
-```java
-import org.openqa.selenium.TakesScreenshot;
-import org.openqa.selenium.OutputType;
-import java.io.File;
-import org.apache.commons.io.FileUtils;
-
-// W @AfterEach lub w catch:
-File screenshot = ((TakesScreenshot) driver)
-    .getScreenshotAs(OutputType.FILE);
-FileUtils.copyFile(screenshot, new File("target/screenshot.png"));
-```
-
-**Materiały:**
-- [Selenium — Taking Screenshots](https://www.selenium.dev/documentation/webdriver/interactions/windows/#takescreenshot)
-
-### B.6 Page Object Pattern — szczegółowo
-
-Page Object Model to klasa Javy reprezentująca jedną stronę lub komponent UI. Enkapsuluje:
-- **Lokatory** (`@FindBy`) — jak znaleźć elementy
-- **Akcje** — co użytkownik może zrobić na tej stronie
-- **Asercje** — opcjonalnie, co strona powinna zawierać
-
-W projekcie startowym znajdziesz przykład `RegisterPage`. Oto ogólny wzorzec na `LoginPage`:
-
-```java
-import org.openqa.selenium.WebDriver;
-import org.openqa.selenium.WebElement;
-import org.openqa.selenium.support.FindBy;
-import org.openqa.selenium.support.PageFactory;
-
-public class LoginPage {
-    private final WebDriver driver;
-
-    @FindBy(name = "username")
-    private WebElement usernameField;
-
-    @FindBy(name = "password")
-    private WebElement passwordField;
-
-    @FindBy(css = "button[type='submit']")
-    private WebElement submitButton;
-
-    @FindBy(css = ".error")
-    private WebElement errorMessage;
-
-    public LoginPage(WebDriver driver) {
-        this.driver = driver;
-        PageFactory.initElements(driver, this);
-    }
-
-    public void login(String username, String password) {
-        usernameField.sendKeys(username);
-        passwordField.sendKeys(password);
-        submitButton.click();
-    }
-
-    public boolean hasError() {
-        try {
-            return errorMessage.isDisplayed();
-        } catch (NoSuchElementException e) {
-            return false;
-        }
-    }
-
-    public String getErrorText() {
-        return errorMessage.getText();
-    }
-
-    public String getCurrentUrl() {
-        return driver.getCurrentUrl();
-    }
-}
-
-// Użycie w teście:
-@Test
-public void testLoginWithInvalidCredentials() {
-    JavalinTest.test(server, (srv, client) -> {
-        driver.get(client.getOrigin() + "/login");
-
-        LoginPage loginPage = new LoginPage(driver);
-        loginPage.login("nieistniejacy", "bledne_haslo");
-
-        assertTrue(
-            loginPage.getCurrentUrl().contains("/login"),
-            "Nieudane logowanie powinno pozostać na stronie /login"
-        );
-    });
-}
-```
-
-**Zalety Page Object Model:**
-- Zmiana selektora CSS wymaga edycji tylko jednej klasy
-- Testy opisują *co* robi użytkownik, a nie *jak* jest to technicznie zrealizowane
-- Łatwiejsze ponowne użycie między testami
-
-**Materiały:**
-- [Selenium — Page Object Models](https://www.selenium.dev/documentation/test_practices/encouraged/page_object_models/)
-- [Selenium — PageFactory](https://www.selenium.dev/documentation/webdriver/support_features/page_factory/)
-
-## Dodatek C: Rozwiązania zadań
-
-### Ćwiczenie 1.1a: Wyodrębnienie PageController
-
-#### Kod: `PageController.java`
-
-```java
-package pl.edu.uksw.java;
-
-import io.javalin.http.Context;
-
-class PageController {
-    void home(Context ctx) {
-        ctx.render("home.html");
-    }
-
-    void about(Context ctx) {
-        ctx.render("about.html");
-    }
-
-    void contact(Context ctx) {
-        ctx.render("contact.html");
-    }
-}
-```
-
-#### Kod: Zaktualizowana część `JavalinApp.java` (blok routes)
-
-```java
-var pages = new PageController();
-
-config.routes.get("/",        pages::home);
-config.routes.get("/about",   pages::about);
-config.routes.get("/contact", pages::contact);
-```
-
-#### Status przejścia
-- ✓ Aplikacja uruchamia się bez zmian w zachowaniu
-- ✓ Strony główna, o aplikacji i kontakt wyświetlają się prawidłowo
-- ✓ `JavalinApp` ma mniej kodu — zaczyna przypominać klasę konfiguracyjną
-
----
-
-### Ćwiczenie 1.1b: Wyodrębnienie AuthController
-
-#### Kod: `AuthController.java`
-
-```java
-package pl.edu.uksw.java;
-
-import io.javalin.http.Context;
-import java.util.Map;
-
-class AuthController {
-    private final UserRepository users;
-
-    AuthController(UserRepository users) {
-        this.users = users;
-    }
-
-    void showRegister(Context ctx) {
-        ctx.render("register.html", errorModel(ctx.queryParam("error")));
-    }
-
-    void handleRegister(Context ctx) {
-        String username = ctx.formParam("username");
-        String password = ctx.formParam("password");
-
-        if (username == null || username.isBlank()
-                || password == null || password.isBlank()) {
-            ctx.redirect("/register?error=empty_fields");
-            return;
-        }
-        if (users.existsByUsername(username)) {
-            ctx.redirect("/register?error=username_taken");
-            return;
-        }
-
-        users.add(new User(username, password));
-        ctx.redirect("/login");
-    }
-
-    void showLogin(Context ctx) {
-        ctx.render("login.html", errorModel(ctx.queryParam("error")));
-    }
-
-    void handleLogin(Context ctx) {
-        String username = ctx.formParam("username");
-        String password = ctx.formParam("password");
-
-        if (users.authenticate(username, password)) {
-            ctx.sessionAttribute("user", username);
-            ctx.redirect("/");
-        } else {
-            ctx.redirect("/login?error=invalid_credentials");
-        }
-    }
-
-    void handleLogout(Context ctx) {
-        ctx.sessionAttribute("user", null);
-        ctx.redirect("/");
-    }
-
-    private static Map<String, Object> errorModel(String error) {
-        return error != null ? Map.of("error", error) : Map.of();
-    }
-}
-```
-
-#### Kod: Zaktualizowana konfiguracja routes w `JavalinApp`
-
-```java
-var auth = new AuthController(users);
-
-config.routes.get("/register",  auth::showRegister);
-config.routes.post("/register", auth::handleRegister);
-config.routes.get("/login",     auth::showLogin);
-config.routes.post("/login",    auth::handleLogin);
-config.routes.get("/logout",    auth::handleLogout);
-```
-
-#### Zmiana w `JavalinApp.java`
-Usuń dawne prywatne metody `showRegister`, `handleRegister`, `showLogin`, `handleLogin`, `handleLogout`.
-
-#### Status przejścia
-- ✓ Rejestracja i logowanie działają jak poprzednio
-- ✓ `AuthController` zawiera całą logikę autentykacji
-- ✓ Zależność od `UserRepository` jest jawna (wstrzykiwana przez konstruktor)
-
----
-
-### Ćwiczenie 1.1c: Wyodrębnienie MemberController
-
-#### Kod: `MemberController.java`
-
-```java
-package pl.edu.uksw.java;
-
-import io.javalin.http.Context;
-import java.util.Map;
-
-class MemberController {
-    private final UserRepository users;
-
-    MemberController(UserRepository users) {
-        this.users = users;
-    }
-
-    void showMembers(Context ctx) {
-        if (ctx.sessionAttribute("user") == null) {
-            ctx.status(403).result("Forbidden: login required");
-            return;
-        }
-        ctx.render("members.html", Map.of("users", users.allUsernames()));
-    }
-}
-```
-
-#### Kod: Zaktualizowana konfiguracja w `JavalinApp`
-
-```java
-var members = new MemberController(users);
-
-config.routes.get("/members", members::showMembers);
-```
-
-#### Zmiana w `JavalinApp.java`
-Usuń metodę `showMembers` z `JavalinApp`.
-
-#### Status przejścia
-- ✓ Lista użytkowników (`/members`) wyświetla się po zalogowaniu
-- ✓ Brak zalogowania powoduje błąd 403
-- ✓ Wszystkie handlery logiki biznesowej wyodrębnione z `JavalinApp`
-- ✓ `JavalinApp` zawiera teraz głównie konfigurację infrastruktury
-
----
-
-### Ćwiczenie 1.2a: Szablon błędu `error.html`
-
-#### Plik: `src/main/resources/templates/error.html`
-
-```html
-<!DOCTYPE html>
-<html xmlns:th="http://www.thymeleaf.org">
-<head>
-    <meta charset="UTF-8">
-    <title th:text="'Błąd ' + ${code}">Błąd</title>
-    <link rel="stylesheet" th:href="@{/style/style.css}">
-</head>
-<body>
-    <header>
-        <h1>Javalin App</h1>
-        <nav>
-            <a href="/">Strona główna</a>
-            <a href="/about">O aplikacji</a>
-            <a href="/contact">Kontakt</a>
-        </nav>
-    </header>
-
-    <main>
-        <section class="error-container">
-            <h1 th:text="'Błąd ' + ${code}">Błąd</h1>
-            <p th:text="${message}">Coś poszło nie tak.</p>
-            <a href="/" class="btn">Powrót na stronę główną</a>
-        </section>
-    </main>
-
-    <footer>
-        <p>&copy; 2026 Javalin App. Wszystkie prawa zastrzeżone.</p>
-    </footer>
-</body>
-</html>
-```
-
-#### Status przejścia
-- ✓ Szablon gotowy do użycia w handlerach błędów
-
----
-
-### Ćwiczenie 1.2b: Handlery błędów w `JavalinApp`
-
-#### Kod: Zaktualizowany blok konfiguracyjny w `JavalinApp.create()`
-
-```java
-// ── Error handlers ──
-config.routes.error(404, ctx ->
-    ctx.render("error.html", Map.of(
-        "code",    "404",
-        "message", "Nie znaleziono strony: " + ctx.path()
-    ))
-);
-
-config.routes.exception(Exception.class, (e, ctx) -> {
-    e.printStackTrace();
-    ctx.status(500).render("error.html", Map.of(
-        "code",    "500",
-        "message", "Wewnętrzny błąd serwera"
-    ));
-});
-```
-
-#### Gdzie umieścić
-Te handlery powinny być umieszczone w bloku `Javalin.create(config -> { ... })`
-**przed** konfiguracją routes, ale po skonfigurowaniu Thymeleaf.
-
-#### Status przejścia
-- ✓ Wpisanie nieistniejącego URL wyświetla własną stronę 404 (nie Jetty)
-- ✓ Wyrzucenie wyjątku gdziekolwiek w aplikacji wyświetla stronę 500
-- ✓ Stack trace wyjątku jest drukowany do konsoli dla debugowania
-
----
-
-### Ćwiczenie 1.3a: Metoda `requireLogin` w `MemberController`
-
-#### Kod: Zaktualizowany `MemberController.java`
-
-```java
-package pl.edu.uksw.java;
-
-import io.javalin.http.Context;
-import io.javalin.http.UnauthorizedResponse;
-import java.util.Map;
-
-class MemberController {
-    private final UserRepository users;
-
-    MemberController(UserRepository users) {
-        this.users = users;
-    }
-
-    void showMembers(Context ctx) {
-        requireLogin(ctx);  // ← Nowe podejście
-        ctx.render("members.html", Map.of("users", users.allUsernames()));
-    }
-
-    static void requireLogin(Context ctx) {
-        if (ctx.sessionAttribute("user") == null) {
-            throw new UnauthorizedResponse("Login required");
-        }
-    }
-}
-```
-
-#### Import wymagany
-```java
-import io.javalin.http.UnauthorizedResponse;
-```
-
-#### Status przejścia
-- ✓ `showMembers` teraz rzuca `UnauthorizedResponse` zamiast zwracać 403
-- ✓ Metoda `requireLogin` może być ponownie używana w wielu handlerach
-- ✓ Logika kontroli dostępu jest scentralizowana
-
----
-
-### Ćwiczenie 1.3b: Handler dla `UnauthorizedResponse`
-
-#### Kod: Zaktualizowany blok konfiguracyjny w `JavalinApp`
-
-```java
-// ── Error handlers ──
-config.routes.exception(UnauthorizedResponse.class, (e, ctx) ->
-    ctx.redirect("/login?error=login_required")
-);
-
-config.routes.error(404, ctx ->
-    ctx.render("error.html", Map.of(
-        "code",    "404",
-        "message", "Nie znaleziono strony: " + ctx.path()
-    ))
-);
-
-config.routes.exception(Exception.class, (e, ctx) -> {
-    e.printStackTrace();
-    ctx.status(500).render("error.html", Map.of(
-        "code",    "500",
-        "message", "Wewnętrzny błąd serwera"
-    ));
-});
-```
-
-#### Ważna kolejność
-`UnauthorizedResponse` musi być obsługiwany **przed** ogólnym `Exception.class`,
-bo wyjątki są przechwytywane w kolejności rejestracji.
-
-#### Status przejścia
-- ✓ Wejście na `/members` bez logowania przekierowuje na `/login?error=login_required`
-- ✓ Inne wyjątki są obsługiwane przez ogólny handler
-
----
-
-### Ćwiczenie 1.4a: Konfiguracja portu w bloku `config`
-
-#### Kod: Zaktualizowana metoda `JavalinApp`
-
-```java
-class JavalinApp {
-    private final int port;
-    private final Javalin app;
-    private final UserRepository users = new UserRepository();
-
-    JavalinApp(int port) {
-        this.port = port;
-        this.app = Javalin.create(config -> {
-            // ── Port configuration (NEW) ──
-            config.jetty.port = port;
-
-            // ── Infrastructure ──
-            config.staticFiles.add(sf -> {
-                sf.hostedPath = "/img";
-                sf.directory  = "/www/static/images";
-            });
-            config.staticFiles.add(sf -> {
-                sf.hostedPath = "/style";
-                sf.directory  = "/www/static/css";
-            });
-            config.bundledPlugins.enableDevLogging();
-            config.fileRenderer(new JavalinThymeleaf(buildThymeleaf()));
-
-            // ── Routes ──
-            // ... (pozostała konfiguracja)
-        });
-    }
-
-    // Metoda start bez argumentu:
-    void start() {
-        app.start();  // ← Port już skonfigurowany powyżej
-    }
-
-    // ... (reszta kodu)
-}
-```
-
-#### Zmiana w `Main.java`
-
-```java
-public class Main {
-    public static void main(String[] args) {
-        var app = new JavalinApp(8089);
-        app.setupAdminAccount("admin", "admin");
-        app.start();  // ← Brak argumentu
-    }
-}
-```
-
-#### Status przejścia
-- ✓ Port jest konfigurowany przed uruchomieniem serwera (Javalin 7 style)
-- ✓ `start()` nie przyjmuje argumentów
-
----
-
-### Ćwiczenie 1.4b: Zdarzenia cyklu życia serwera
-
-#### Kod: Zaktualizowany blok konfiguracyjny w `JavalinApp`
-
-```java
-this.app = Javalin.create(config -> {
-    // ── Port configuration ──
-    config.jetty.port = port;
-
-    // ── Lifecycle events ──
-    config.events.serverStarting(() ->
-        System.out.println("Uruchamianie serwera na porcie " + port + "...")
-    );
-    config.events.serverStarted(() ->
-        System.out.println("Serwer gotowy: http://localhost:" + port)
-    );
-
-    // ── Infrastructure & Routes ──
-    // ... (reszta konfiguracji)
-});
-```
-
-#### Spodziewany output w konsoli
-```
-Uruchamianie serwera na porcie 8089...
-Serwer gotowy: http://localhost:8089
-```
-
-#### Status przejścia
-- ✓ Komunikat o uruchomieniu serwera pojawia się w konsoli
-- ✓ Zdarzenia cyklu życia są konfigurowane w bloku `config`
-
----
-
-### Ćwiczenie 2.3a: Uruchomienie gotowych testów
-
-#### Polecenie
-```bash
-mvn test
-```
-
-#### Oczekiwane wyniki
-```
-ApplicationTests > testMainPageTitle() PASSED
-ApplicationTests > testMembersPageAccessDenied() PASSED
-ApplicationTests > testLoginWithValidCredentials() PASSED
-ApplicationTests > testRegistrationFlow() PASSED
-ApplicationTests > testRegisterPageTitle() PASSED
-```
-
-#### Status przejścia
-- ✓ Wszystkie 5 testów powinno przejść
-- ✓ WebDriver pobiera się automatycznie (WebDriverManager)
-- ✓ Każdy test jest izolowany dzięki `JavalinTest.test(...)`
-
----
-
-### Ćwiczenie 2.3b: Test tytułu strony głównej
-
-#### Kod: Dodać do `ApplicationTests.java`
-
-```java
-@Test
-public void testMainPageTitle() {
-    JavalinTest.test(server, (srv, client) -> {
-        driver.get(client.getOrigin() + "/");
-        String title = driver.getTitle();
-        assertEquals("Javalin App", title,
-            "Tytuł strony głównej niezgodny z oczekiwanym");
-    });
-}
-```
-
-#### Uwagi
-- Test jest już w kodzie startowym
-- Aby przeszedł, plik `home.html` musi zawierać `<title>Javalin App</title>`
-
-#### Status przejścia
-- ✓ Test przechodzi
-
----
-
-### Ćwiczenie 2.3c: Test logowania ze zwalidowanymi danymi
-
-#### Kod: Dodać do `ApplicationTests.java`
-
-```java
-@Test
-public void testLoginWithValidCredentials() {
-    JavalinTest.test(server, (srv, client) -> {
-        driver.get(client.getOrigin() + "/login");
-
-        driver.findElement(By.name("username")).sendKeys(admin.getUsername());
-        driver.findElement(By.name("password")).sendKeys(admin.getPassword());
-        driver.findElement(By.cssSelector("button[type='submit']")).click();
-
-        assertEquals(
-            client.getOrigin() + "/",
-            driver.getCurrentUrl(),
-            "Po zalogowaniu oczekiwano przekierowania na stronę główną"
-        );
-    });
-}
-```
-
-#### Uwagi
-- Test jest już w kodzie startowym
-- Używa pola `admin`, które jest przygotowywane w konstruktorze `SeleniumTestBase`
-
-#### Status przejścia
-- ✓ Test przechodzi
-
----
-
-### Ćwiczenie 2.3d: Test pełnego przepływu rejestracji
-
-#### Kod: Dodać do `ApplicationTests.java`
-
-```java
-@Test
-public void testRegistrationFlow() {
-    JavalinTest.test(server, (srv, client) -> {
-        driver.get(client.getOrigin() + "/register");
-
-        String uniqueUsername = "testuser" + System.currentTimeMillis();
-        driver.findElement(By.name("username")).sendKeys(uniqueUsername);
-        driver.findElement(By.name("password")).sendKeys("password123");
-        driver.findElement(By.cssSelector("button[type='submit']")).click();
-
-        assertEquals(
-            client.getOrigin() + "/login",
-            driver.getCurrentUrl(),
-            "Po rejestracji oczekiwano przekierowania na stronę logowania"
-        );
-    });
-}
-```
-
-#### Uwagi
-- `System.currentTimeMillis()` generuje unikalną nazwa użytkownika — testy mogą być uruchamiane wielokrotnie bez kolizji
-- Test jest już w kodzie startowym
-
-#### Status przejścia
-- ✓ Test przechodzi
-
----
-
-### Ćwiczenie 2.4a: Page Object `LoginPage`
-
-#### Kod: Dodać do `ApplicationTests.java` lub do oddzielnego pliku
-
-```java
-public static class LoginPage {
-    private WebDriver driver;
-
-    @FindBy(name = "username")
-    private WebElement usernameField;
-
-    @FindBy(name = "password")
-    private WebElement passwordField;
-
-    @FindBy(css = "button[type='submit']")
-    private WebElement submitButton;
-
-    @FindBy(css = ".error")
-    private WebElement errorMessage;
-
-    public LoginPage(WebDriver driver) {
-        this.driver = driver;
-        PageFactory.initElements(driver, this);
-    }
-
-    public void login(String username, String password) {
-        usernameField.sendKeys(username);
-        passwordField.sendKeys(password);
-        submitButton.click();
-    }
-
-    public boolean hasError() {
-        try {
-            return errorMessage.isDisplayed();
-        } catch (NoSuchElementException e) {
-            return false;
-        }
-    }
-
-    public String getErrorText() {
-        return errorMessage.getText();
-    }
-
-    public String getCurrentUrl() {
-        return driver.getCurrentUrl();
-    }
-}
-```
-
-#### Import wymagany
-```java
-import org.openqa.selenium.support.FindBy;
-import org.openqa.selenium.support.PageFactory;
-import org.openqa.selenium.NoSuchElementException;
-```
-
-#### Status przejścia
-- ✓ Klasa `LoginPage` enkapsuluje logikę strony logowania
-- ✓ Wielokrotnie używana w testach (patrz ćwiczenie 2.4b)
-
----
-
-### Ćwiczenie 2.4b: Test logowania z użyciem Page Object
-
-#### Kod: Dodać do `ApplicationTests.java`
-
-```java
-@Test
-public void testLoginWithPageObject() {
-    JavalinTest.test(server, (srv, client) -> {
-        driver.get(client.getOrigin() + "/login");
-
-        LoginPage loginPage = new LoginPage(driver);
-        loginPage.login(admin.getUsername(), admin.getPassword());
-
-        assertEquals(
-            client.getOrigin() + "/",
-            loginPage.getCurrentUrl(),
-            "Po zalogowaniu oczekiwano przekierowania na stronę główną"
-        );
-    });
-}
-```
-
-#### Opcjonalnie: Test z błędnymi danymi
-
-```java
-@Test
-public void testLoginWithInvalidCredentials() {
-    JavalinTest.test(server, (srv, client) -> {
-        driver.get(client.getOrigin() + "/login");
-
-        LoginPage loginPage = new LoginPage(driver);
-        loginPage.login("nieistniejacy", "blednehaslo");
-
-        assertTrue(
-            loginPage.getCurrentUrl().contains("/login"),
-            "Nieudane logowanie powinno pozostać na stronie /login"
-        );
-        assertTrue(
-            loginPage.hasError(),
-            "Powinien być wyświetlony komunikat o błędzie"
-        );
-    });
-}
-```
-
-#### Status przejścia
-- ✓ Test używa `LoginPage` zamiast bezpośrednio manipulować Selenium API
-- ✓ Kod testu jest bardziej czytelny i zrozumiały
-- ✓ Zmiana selektora CSS wymaga edycji tylko `LoginPage`, nie każdego testu
-
----
-
-### Końcowy stan projektu (`src/main/java`)
-
-```
-├── Main.java                 (punkt wejścia)
-├── JavalinApp.java           (konfiguracja serwera, ścieżki, obsługa błędów)
-├── PageController.java       (strony statyczne)
-├── AuthController.java       (rejestracja, logowanie, wylogowanie)
-├── MemberController.java     (lista użytkowników)
-├── UserRepository.java       (przechowywanie użytkowników)
-├── User.java                 (model)
-└── UserType.java             (enum)
-```
-
-### Końcowy stan projektu (`src/test/java`)
-
-```
-├── SeleniumTestBase.java     (klasa bazowa — setup WebDriver)
-└── ApplicationTests.java     (testy Selenium + Page Objects)
-```
+**Git:** Po zakończeniu zajęć wykonaj commit:  
+*„Lab 9: introduce Guice dependency injection"*

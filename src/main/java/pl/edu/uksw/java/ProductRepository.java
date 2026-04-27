@@ -13,9 +13,9 @@ public class ProductRepository {
     }
 
     private void seed() {
-        add(new Product("p1", "Laptop", "High-performance laptop for work and play.", "/img/laptop.jpg", 999.99));
-        add(new Product("p2", "Mouse", "Ergonomic wireless mouse.", "/img/mouse.jpg", 29.99));
-        add(new Product("p3", "Keyboard", "Mechanical keyboard with RGB backlight.", "/img/keyboard.jpg", 79.99));
+        add(new Product("p1", "Laptop", "High-performance laptop for work and play.", "/img/laptop.png", 999.99));
+        add(new Product("p2", "Mouse", "Ergonomic wireless mouse.", "/img/mouse.png", 29.99));
+        add(new Product("p3", "Keyboard", "Mechanical keyboard with RGB backlight.", "/img/keyboard.png", 79.99));
     }
 
     public void add(Product product) {

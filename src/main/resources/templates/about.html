@@ -1,24 +1,11 @@
-<!-- src/main/resources/templates/home.html -->
 <!DOCTYPE html>
-<html xmlns:th="http://www.thymeleaf.org">
-<head>
-    <title>About us</title>
-    <object th:include="fragments/head  :: head" th:remove="tag"/>
-</head>
+<html xmlns:th="http://www.thymeleaf.org"
+      th:replace="layout :: layout(title='About us', content=~{::content})">
 <body>
-<!-- Navigation Bar -->
-<header th:replace="fragments/header :: headerFragment"/>
-
-<!-- Page Content -->
-<section id="main" class="container mt-4">
-    <div>
-        <h1>About us</h1>
-        <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore
-            magna aliqua.</p>
-    </div>
-</section>
-
-<!-- Footer -->
-<footer th:replace="fragments/footer :: footerFragment"/>
+<div th:fragment="content">
+    <h1>About us</h1>
+    <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt
+        ut labore et dolore magna aliqua.</p>
+</div>
 </body>
 </html>

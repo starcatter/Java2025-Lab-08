@@ -1,23 +1,44 @@
 <!DOCTYPE html>
-<html xmlns:th="http://www.thymeleaf.org">
-<head><title>Cart</title><link rel="stylesheet" th:href="@{/style/style.css}"></head>
+<html xmlns:th="http://www.thymeleaf.org"
+      th:replace="layout :: layout(title='Your Cart', content=~{::content})">
 <body>
-<header><h1>Webstore</h1><nav><a href="/products">Products</a> <a href="/cart">Cart</a></nav></header>
-<main>
+<div th:fragment="content">
     <h2>Your Cart</h2>
-    <p th:if="${#maps.isEmpty(cartItems)}">Cart is empty. <a href="/products">Browse products</a>.</p>
-    <ul th:unless="${#maps.isEmpty(cartItems)}">
-        <li th:each="entry : ${cartItems}">
-            <strong th:text="${entry.key.name}">Product</strong> —
-            Qty: <span th:text="${entry.value}">1</span> × $<span th:text="${entry.key.price}">0.00</span>
-            <form action="/cart/remove" method="post" style="display:inline; margin-left:10px;">
-                <input type="hidden" name="productId" th:value="${entry.key.id}">
-                <button type="submit">Remove</button>
-            </form>
-        </li>
-    </ul>
-    <br>
-    <a th:unless="${#maps.isEmpty(cartItems)}" href="/checkout"><button>Proceed to Checkout</button></a>
-</main>
+
+    <p th:if="${#maps.isEmpty(cartItems)}">
+        Cart is empty. <a th:href="@{/products}">Browse products</a>.
+    </p>
+
+    <table class="table" th:unless="${#maps.isEmpty(cartItems)}">
+        <thead>
+        <tr><th>Product</th><th>Unit price</th><th>Qty</th><th>Line total</th><th></th></tr>
+        </thead>
+        <tbody>
+        <tr th:each="entry : ${cartItems}">
+            <td><strong th:text="${entry.key.name}">Product</strong></td>
+            <td th:text="'$' + ${entry.key.price}">$0.00</td>
+            <td th:text="${entry.value}">1</td>
+            <td th:text="'$' + ${entry.key.price * entry.value}">$0.00</td>
+            <td>
+                <form action="/cart/remove" method="post" style="display:inline;">
+                    <input type="hidden" name="productId" th:value="${entry.key.id}">
+                    <button type="submit" class="btn btn-sm btn-outline-danger">Remove</button>
+                </form>
+            </td>
+        </tr>
+        </tbody>
+        <tfoot>
+        <tr>
+            <th colspan="3" style="text-align:right;">Total:</th>
+            <th th:text="'$' + ${total}">$0.00</th>
+            <th></th>
+        </tr>
+        </tfoot>
+    </table>
+
+    <p th:unless="${#maps.isEmpty(cartItems)}">
+        <a th:href="@{/checkout}" class="btn btn-primary">Proceed to Checkout</a>
+    </p>
+</div>
 </body>
 </html>

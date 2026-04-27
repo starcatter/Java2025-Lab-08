@@ -29,7 +29,7 @@ class ControllerUnitTests {
 
         var productsCtrl = new ProductController(productRepo, cartService);
         var cartCtrl     = new CartController(cartService, productRepo);
-        var checkoutCtrl = new CheckoutController(cartService, orderService);
+        var checkoutCtrl = new CheckoutController(cartService, orderService, productRepo);
         var ordersCtrl   = new OrderController(orderService, productRepo);
         var authCtrl     = new AuthController(userRepo);
 
