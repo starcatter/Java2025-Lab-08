@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head><title>My Orders</title><link rel="stylesheet" th:href="@{/style/style.css}"></head>
+<body>
+<header><h1>Webstore</h1><nav><a href="/products">Products</a> <a href="/orders">My Orders</a></nav></header>
+<main>
+    <h2>My Orders</h2>
+    <p th:if="${#lists.isEmpty(orders)}">No orders yet. <a href="/products">Start shopping</a>.</p>
+    <div th:each="o : ${orders}" style="border:1px solid #ccc; padding:10px; margin:10px 0;">
+        <h3 th:text="'Order #' + ${o.id}">ID</h3>
+        <p th:text="'Date: ' + ${o.date}">Date</p>
+        <p th:text="'Status: ' + ${o.status}">Status</p>
+        <ul>
+            <li th:each="item : ${o.items}">
+                <span th:text="${item.name}">Product</span> — Qty: <span th:text="${item.qty}">1</span>
+            </li>
+        </ul>
+    </div>
+</main>
+</body>
+</html>

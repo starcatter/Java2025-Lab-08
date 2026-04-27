@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title th:text="'Błąd ' + ${code}">Błąd</title>
+    <link rel="stylesheet" th:href="@{/style/style.css}">
+</head>
+<body>
+<header>
+    <h1>Javalin App</h1>
+    <nav>
+        <a href="/">Strona główna</a>
+        <a href="/about">O aplikacji</a>
+        <a href="/contact">Kontakt</a>
+    </nav>
+</header>
+<main>
+    <section class="error-container">
+        <h1 th:text="'Błąd ' + ${code}">Błąd</h1>
+        <p th:text="${message}">Coś poszło nie tak.</p>
+        <a href="/" class="btn">Powrót na stronę główną</a>
+    </section>
+</main>
+<footer>
+    <p>&copy; 2026 Javalin App. Wszystkie prawa zastrzeżone.</p>
+</footer>
+</body>
+</html>

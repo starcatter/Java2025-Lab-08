@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head><title>Product Details</title><link rel="stylesheet" th:href="@{/style/style.css}"></head>
+<body>
+<header><h1>Webstore</h1><nav><a href="/products">← Back to Products</a></nav></header>
+<main>
+    <h2 th:text="${product.name}">Name</h2>
+    <img th:src="${product.imageUrl}" style="width:200px; height:200px; object-fit:cover;">
+    <p th:text="${product.description}">Description</p>
+    <p th:text="'Price: $' + ${product.price}">Price</p>
+    <form action="/cart/add" method="post">
+        <input type="hidden" name="productId" th:value="${product.id}">
+        <input type="number" name="qty" value="1" min="1" style="width:50px;">
+        <button type="submit">Add to Cart</button>
+    </form>
+</main>
+</body>
+</html>

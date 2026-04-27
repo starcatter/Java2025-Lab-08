@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head><title>Checkout</title><link rel="stylesheet" th:href="@{/style/style.css}"></head>
+<body>
+<header><h1>Webstore</h1></header>
+<main>
+    <h2>Checkout</h2>
+    <p>Review your order and confirm purchase.</p>
+    <form action="/checkout/process" method="post">
+        <button type="submit">Confirm & Pay</button>
+    </form>
+    <p><a href="/cart">← Back to Cart</a></p>
+</main>
+</body>
+</html>

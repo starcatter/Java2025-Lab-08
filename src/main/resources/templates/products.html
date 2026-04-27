@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head><title>Products</title><link rel="stylesheet" th:href="@{/style/style.css}"></head>
+<body>
+<header><h1>Webstore</h1><nav><a href="/">Home</a> <a href="/products">Products</a> <a href="/cart">Cart</a> <a href="/orders">Orders</a> <a href="/logout">Logout</a></nav></header>
+<main>
+    <h2>Products</h2>
+    <div th:each="p : ${products}" style="border:1px solid #ccc; padding:10px; margin:10px 0; display:inline-block; width:220px; vertical-align:top;">
+        <img th:src="${p.imageUrl}" alt="product" style="width:100px; height:100px; object-fit:cover; display:block; margin:0 auto;">
+        <h3 th:text="${p.name}">Name</h3>
+        <p th:text="'$' + ${p.price}">0.00</p>
+        <a th:href="@{/products/{id}(id=${p.id})}">View Details</a>
+    </div>
+</main>
+</body>
+</html>
