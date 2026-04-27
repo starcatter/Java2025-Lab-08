@@ -3,143 +3,63 @@ package pl.edu.uksw.java;
 import io.javalin.testtools.JavalinTest;
 import org.junit.jupiter.api.Test;
 import org.openqa.selenium.By;
+import org.openqa.selenium.NoSuchElementException;
 import org.openqa.selenium.WebElement;
-import org.openqa.selenium.JavascriptExecutor;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
-import io.github.bonigarcia.wdm.WebDriverManager;
-import io.javalin.Javalin;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.BeforeEach;
-import org.openqa.selenium.WebDriver;
-import org.openqa.selenium.firefox.FirefoxDriver;
-import org.openqa.selenium.firefox.FirefoxOptions;
 import org.openqa.selenium.support.FindBy;
 import org.openqa.selenium.support.PageFactory;
 
-/**
- * Base class for Selenium based tests for this Javalin app.
- *
- * For best performance, try changing the WebDriver to the Firefox variant,
- * that is change:
- *  firefoxdriver -> firefoxdriver
- *  FirefoxOptions -> FirefoxOprions
- *  FirefoxDriver -> FirefoxDriver
- *
- * and in pom.xml, change:
- * selenium-firefox-driver -> selenium-firefox-driver
- *
- * If neither Firefox nor Firefox works, on Windows you can try using EdgeDriver
- */
-class SeleniumTestBase {
-    WebDriver driver;
+import static org.junit.jupiter.api.Assertions.*;
 
-    final JavalinApp app;
-    final Javalin server;
-    final User admin;
-
-    public SeleniumTestBase() {
-        app = new JavalinApp(8080);
-        server = app.getServer();
-        admin = app.setupAdminAccount("admin","admin");
-    }
-
-    @BeforeAll
-    static void setupAll() { WebDriverManager.firefoxdriver().setup(); }
-
-    @BeforeEach
-    void setupDriver() {
-        FirefoxOptions options = new FirefoxOptions();
-
-        options.addArguments("--headless");
-        options.addArguments("--disable-gpu");
-
-        driver = new FirefoxDriver(options);
-    }
-
-    @AfterEach
-    void teardown() {
-        if (driver != null) {
-            driver.quit();
-        }
-    }
-}
-
-public class ApplicationTests extends SeleniumTestBase {
-    @Test
-    public void testMainPageTitle() {
-        JavalinTest.test(server, (server, client) -> {
-            // Navigate to the main page
-            driver.get(client.getOrigin() + "/");
-            String title = driver.getTitle();
-            assertEquals(title, "Javalin App", "Title mismatch on main page");
-        });
-    }
+class ApplicationTests extends SeleniumTestBase {
 
     @Test
-    public void testMembersPageAccessDenied() {
+    void testMainPageTitle() {
         JavalinTest.test(server, (srv, client) -> {
-            // Navigate to the members page without logging in
-            driver.get(client.getOrigin() + "/members");
-            String bodyText = driver.findElement(By.tagName("body")).getText();
-            assertTrue(bodyText.contains("Forbidden: login required"), "Unauthorized access allowed to members page");
-
-            // Verify HTTP status code via Javalin's test client (NOT simulated in browser!)
-            var response = client.get("/members");
-            assertEquals(403, response.getCode());
+            driver.get(client.getOrigin() + "/");
+            assertEquals("Javalin App", driver.getTitle(), "Title mismatch on main page");
         });
     }
 
     @Test
-    public void testLoginWithValidCredentials() {
-        JavalinTest.test(server, (server, client) -> {
-            // Navigate to the login page
+    void testLoginWithValidCredentials() {
+        JavalinTest.test(server, (srv, client) -> {
             driver.get(client.getOrigin() + "/login");
+            driver.findElement(By.name("username")).sendKeys(admin.getUsername());
+            driver.findElement(By.name("password")).sendKeys(admin.getPassword());
+            driver.findElement(By.cssSelector("button[type='submit']")).click();
 
-            // Fill in login form
-            WebElement usernameField = driver.findElement(By.name("username"));
-            WebElement passwordField = driver.findElement(By.name("password"));
-            WebElement submitButton = driver.findElement(By.cssSelector("button[type='submit']"));
-
-            usernameField.sendKeys(admin.getUsername());
-            passwordField.sendKeys(admin.getPassword());
-            submitButton.click();
-
-            // Verify redirection to home page
-            String currentUrl = driver.getCurrentUrl();
-            assertEquals(currentUrl, client.getOrigin() + "/", "Login failed or incorrect redirection");
+            assertEquals(client.getOrigin() + "/", driver.getCurrentUrl(),
+                    "Po zalogowaniu oczekiwano przekierowania na stronę główną");
         });
     }
 
     @Test
-    public void testRegistrationFlow() {
-        JavalinTest.test(server, (server, client) -> {
-            // Navigate to the registration page
+    void testRegistrationFlow() {
+        JavalinTest.test(server, (srv, client) -> {
             driver.get(client.getOrigin() + "/register");
-
-            // Fill in registration form
-            WebElement usernameField = driver.findElement(By.name("username"));
-            WebElement passwordField = driver.findElement(By.name("password"));
-            WebElement submitButton = driver.findElement(By.cssSelector("button[type='submit']"));
-
             String uniqueUsername = "testuser" + System.currentTimeMillis();
-            usernameField.sendKeys(uniqueUsername);
-            passwordField.sendKeys("password123");
-            submitButton.click();
+            driver.findElement(By.name("username")).sendKeys(uniqueUsername);
+            driver.findElement(By.name("password")).sendKeys("password123");
+            driver.findElement(By.cssSelector("button[type='submit']")).click();
 
-            // Verify redirection to login page
-            String currentUrl = driver.getCurrentUrl();
-            assertEquals(currentUrl, client.getOrigin() + "/login", "Registration failed or incorrect redirection");
+            assertEquals(client.getOrigin() + "/login", driver.getCurrentUrl(),
+                    "Po rejestracji oczekiwano przekierowania na stronę logowania");
         });
     }
 
-    public static class RegisterPage {
-        private WebDriver driver;
+    @Test
+    void testMembersPageAccessDenied() {
+        JavalinTest.test(server, (srv, client) -> {
+            driver.get(client.getOrigin() + "/members");
+            assertTrue(driver.getCurrentUrl().contains("/login"),
+                    "Nieudane wejście na /members powinno przekierować na /login");
+        });
+    }
 
-        // Locators
+    // ── Page Object Model ──
+    public static class LoginPage {
+        private final org.openqa.selenium.WebDriver driver;
+
         @FindBy(name = "username")
         private WebElement usernameField;
 
@@ -149,37 +69,45 @@ public class ApplicationTests extends SeleniumTestBase {
         @FindBy(css = "button[type='submit']")
         private WebElement submitButton;
 
-        // Constructor
-        public RegisterPage(WebDriver driver) {
+        @FindBy(css = ".error")
+        private WebElement errorMessage;
+
+        public LoginPage(org.openqa.selenium.WebDriver driver) {
             this.driver = driver;
             PageFactory.initElements(driver, this);
         }
 
-        // Actions
-        public void register(String username, String email, String password) {
+        public void login(String username, String password) {
             usernameField.sendKeys(username);
             passwordField.sendKeys(password);
             submitButton.click();
         }
 
-        public String getUrl() {
+        public boolean hasError() {
+            try {
+                return errorMessage.isDisplayed();
+            } catch (NoSuchElementException e) {
+                return false;
+            }
+        }
+
+        public String getErrorText() {
+            return errorMessage.getText();
+        }
+
+        public String getCurrentUrl() {
             return driver.getCurrentUrl();
         }
     }
 
     @Test
-    public void testRegisterPageTitle() {
-        JavalinTest.test(server, (server, client) -> {
-            // generate user name
-            String uniqueUsername = "testuser" + System.currentTimeMillis();
-
-            // Navigate to the register page
-            driver.get(client.getOrigin() + "/register");
-
-            var registerPage = new RegisterPage(driver);
-            registerPage.register(uniqueUsername, uniqueUsername + "@example.com", "password123");
-
-            assertEquals(registerPage.getUrl(), client.getOrigin() + "/login", "Registration failed or incorrect redirection");
+    void testLoginWithPageObject() {
+        JavalinTest.test(server, (srv, client) -> {
+            driver.get(client.getOrigin() + "/login");
+            LoginPage loginPage = new LoginPage(driver);
+            loginPage.login(admin.getUsername(), admin.getPassword());
+            assertEquals(client.getOrigin() + "/", loginPage.getCurrentUrl(),
+                    "Po zalogowaniu oczekiwano przekierowania na stronę główną");
         });
     }
 }
