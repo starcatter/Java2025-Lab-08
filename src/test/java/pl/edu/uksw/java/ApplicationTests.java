@@ -16,7 +16,7 @@ class ApplicationTests extends SeleniumTestBase {
     void testMainPageTitle() {
         JavalinTest.test(server, (srv, client) -> {
             driver.get(client.getOrigin() + "/");
-            assertEquals("Javalin App", driver.getTitle(), "Title mismatch on main page");
+            assertEquals("Webstore", driver.getTitle(), "Title mismatch on main page");
         });
     }
 
